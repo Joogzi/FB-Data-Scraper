@@ -1,0 +1,39 @@
+# Example configuration for FSAE Data Extractor
+# Copy this to config.json and customize for your video
+
+video_path: ""
+output_dir: "output"
+use_gpu: true
+export_format: "csv"
+
+# Speed metric (OCR)
+speed:
+  enabled: true
+  roi: null  # Will be set via GUI
+  settings:
+    max_speed: 200
+    preprocess_grayscale: true
+
+# G-Force metric (OCR)
+gforce:
+  enabled: true
+  roi: null
+  settings:
+    max_gforce: 2.7
+
+# Wheel torque metrics (color analysis)
+torque_fl:
+  enabled: true
+  roi: null
+
+torque_fr:
+  enabled: true
+  roi: null
+
+torque_rl:
+  enabled: true
+  roi: null
+
+torque_rr:
+  enabled: true
+  roi: null

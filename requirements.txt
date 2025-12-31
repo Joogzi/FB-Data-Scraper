@@ -1,0 +1,11 @@
+# Core dependencies
+opencv-python>=4.8.0
+numpy>=1.24.0
+easyocr>=1.7.0
+
+# GUI
+PyQt6>=6.5.0
+pyqtgraph>=0.13.0
+
+# Utilities
+pyyaml>=6.0

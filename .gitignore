@@ -1,0 +1,42 @@
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Virtual environments
+venv/
+env/
+.venv/
+py311_env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Config files (user-specific)
+config.json
+*.yaml
+!example_config.yaml
+
+# Output data
+output/
+*.csv
+!*example*.csv
+
+# Video files (too large for git)
+*.mp4
+*.avi
+*.mkv
+*.mov
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build
+build/
+dist/
+*.egg-info/
