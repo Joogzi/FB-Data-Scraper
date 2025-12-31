@@ -21,6 +21,7 @@ from src.core.extractors.base import ROI, ExtractionResult
 from src.core.extractors.speed import SpeedExtractor
 from src.core.extractors.gforce import GForceExtractor
 from src.core.extractors.torque import FourWheelTorqueExtractor, TorqueResult
+from src.core.ocr_engine import cleanup_shared_engine
 from src.config.settings import ConfigManager, MetricConfig
 from src.gui.widgets.video_widget import VideoWidget
 from src.gui.widgets.metric_panel import MetricPanel
@@ -497,6 +498,9 @@ class MainWindow(QMainWindow):
         self.speed_extractor.cleanup()
         self.gforce_extractor.cleanup()
         
+        # Cleanup shared OCR engine
+        cleanup_shared_engine()
+        
         event.accept()
 
 
@@ -504,29 +508,37 @@ def main():
     """Application entry point."""
     app = QApplication(sys.argv)
     
-    # Set dark theme
-    app.setStyle("Fusion")
+    # Set application info
+    app.setApplicationName("FSAE Data Extractor")
+    app.setApplicationVersion("1.0.0")
+    app.setOrganizationName("FSAE")
     
-    # Dark palette
-    from PyQt6.QtGui import QPalette
-    palette = QPalette()
-    palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
-    palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
-    palette.setColor(QPalette.ColorRole.Base, QColor(35, 35, 35))
-    palette.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
-    palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(25, 25, 25))
-    palette.setColor(QPalette.ColorRole.ToolTipText, QColor(255, 255, 255))
-    palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
-    palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
-    palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
-    palette.setColor(QPalette.ColorRole.BrightText, QColor(255, 0, 0))
-    palette.setColor(QPalette.ColorRole.Link, QColor(42, 130, 218))
-    palette.setColor(QPalette.ColorRole.Highlight, QColor(42, 130, 218))
-    palette.setColor(QPalette.ColorRole.HighlightedText, QColor(35, 35, 35))
-    app.setPalette(palette)
+    # Import and show splash screen
+    from src.gui.splash import show_splash
+    splash = show_splash()
+    splash.set_progress(10, "Loading styles...")
     
+    # Apply modern stylesheet
+    from src.gui.styles import get_full_stylesheet
+    app.setStyleSheet(get_full_stylesheet())
+    
+    splash.set_progress(30, "Initializing window...")
+    
+    # Create main window
     window = MainWindow()
+    
+    splash.set_progress(60, "Loading configuration...")
+    
+    # Brief delay to show splash
+    import time
+    time.sleep(0.3)
+    
+    splash.set_progress(100, "Ready!")
+    time.sleep(0.2)
+    
+    # Show window and close splash
     window.show()
+    splash.finish(window)
     
     sys.exit(app.exec())
 

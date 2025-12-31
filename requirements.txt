@@ -1,11 +1,46 @@
+# ==============================================
+# FSAE Data Extractor - Dependencies
+# ==============================================
+
 # Core dependencies
 opencv-python>=4.8.0
 numpy>=1.24.0
+
+# ==============================================
+# OCR Engines (PaddleOCR is primary, EasyOCR as fallback)
+# ==============================================
+
+# PaddleOCR - Best accuracy for varied fonts (RECOMMENDED)
+# Note: On Windows, you may need to install paddlepaddle first
+# pip install paddlepaddle -i https://pypi.tuna.tsinghua.edu.cn/simple
+paddlepaddle>=2.5.0
+paddleocr>=2.7.0
+
+# EasyOCR - Fallback option (simpler installation)
 easyocr>=1.7.0
 
-# GUI
+# ==============================================
+# GUI Framework
+# ==============================================
 PyQt6>=6.5.0
 pyqtgraph>=0.13.0
 
+# ==============================================
 # Utilities
+# ==============================================
 pyyaml>=6.0
+
+# ==============================================
+# Packaging (for building standalone executables)
+# ==============================================
+pyinstaller>=6.0.0
+
+# ==============================================
+# Optional: GPU Acceleration
+# ==============================================
+# For NVIDIA GPU acceleration with PaddleOCR:
+# pip install paddlepaddle-gpu
+#
+# For NVIDIA GPU acceleration with EasyOCR:
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+

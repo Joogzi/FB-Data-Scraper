@@ -1,19 +1,37 @@
-# FSAE Onboard Video Data Extractor
+# FSAE Data Extractor
 
-A Python application for extracting telemetry data from Formula SAE onboard videos using OCR and computer vision.
+A professional desktop application for extracting telemetry data from racing/motorsport onboard videos using advanced OCR and computer vision.
 
-## Features
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Python](https://img.shields.io/badge/python-3.9+-green)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
-- **Speed Extraction** - OCR-based speed reading from video overlays
-- **G-Force Extraction** - OCR-based lateral/longitudinal G readings
-- **Torque Analysis** - Color-based per-wheel torque visualization (green=drive, red=brake)
-- **Interactive ROI Selection** - GUI for defining regions of interest for each metric
-- **Real-time Preview** - See extracted values overlaid on video
+## ✨ Features
 
-## Installation
+- **🚀 Advanced OCR Engine** - Uses PaddleOCR (with EasyOCR fallback) for maximum accuracy across different fonts and overlays
+- **📊 Multiple Metrics** - Extract speed, G-force, per-wheel torque, and more
+- **🎯 Interactive ROI Selection** - Draw regions of interest directly on the video
+- **⚡ Real-time Preview** - See extracted values overlaid on video playback
+- **🎨 Modern UI** - Polished dark theme with professional styling
+- **📦 Standalone Executable** - Distribute to others without requiring Python
+
+## 🖼️ Screenshots
+
+*Coming soon*
+
+## 📥 Installation
+
+### Option 1: Download Executable (Easiest)
+
+1. Download the latest release from the [Releases](releases) page
+2. Run `FSAE_Data_Extractor.exe`
+3. No Python installation required!
+
+### Option 2: Install from Source
 
 ```bash
-# Clone and navigate
+# Clone the repository
+git clone https://github.com/yourusername/fsae_data_extractor.git
 cd fsae_data_extractor
 
 # Create virtual environment
@@ -25,53 +43,112 @@ source venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 ```
 
-## Project Structure
+#### Note for PaddleOCR on Windows:
+If you encounter issues installing PaddleOCR, try:
+```bash
+pip install paddlepaddle -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip install paddleocr
+```
+
+## 🚀 Usage
+
+### Running the Application
+
+```bash
+python run.py
+```
+
+### Quick Start
+
+1. **Open a Video** - File → Open Video (or Ctrl+O)
+2. **Initialize OCR** - Tools → Initialize OCR (first time only, will auto-download models)
+3. **Select ROIs** - Click "Select ROI" for each metric and draw a box around the data area
+4. **Play Video** - Use transport controls or Space to play/pause
+5. **Export Data** - File → Export Data to save extracted values to CSV
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| Space | Play/Pause |
+| ← → | Step 1 frame |
+| ↑ ↓ | Step 10 frames |
+| Ctrl+O | Open video |
+| Ctrl+S | Save configuration |
+| Ctrl+E | Export data |
+
+## 🏗️ Building Standalone Executable
+
+To create a distributable executable:
+
+```bash
+# Install PyInstaller
+pip install pyinstaller
+
+# Build the executable
+python build.py
+
+# Or with options
+python build.py --clean    # Clean first
+python build.py --onedir   # Build as folder (easier to debug)
+```
+
+The executable will be in the `dist/` folder.
+
+## 📁 Project Structure
 
 ```
 fsae_data_extractor/
+├── run.py                  # Application entry point
+├── build.py                # Build script for executable
+├── requirements.txt        # Python dependencies
+├── fsae_extractor.spec     # PyInstaller configuration
 ├── src/
-│   ├── core/               # Core extraction logic
-│   │   ├── extractors/     # Individual metric extractors
-│   │   │   ├── base.py     # Base extractor class
-│   │   │   ├── speed.py    # Speed OCR extractor
-│   │   │   ├── gforce.py   # G-force OCR extractor
-│   │   │   └── torque.py   # Torque color analyzer
-│   │   ├── video.py        # Video handling utilities
-│   │   └── roi.py          # ROI management
-│   ├── gui/                # PyQt6 frontend
+│   ├── core/
+│   │   ├── ocr_engine.py   # PaddleOCR/EasyOCR wrapper
+│   │   ├── preprocessor.py # Image preprocessing pipeline
+│   │   ├── video.py        # Video handling
+│   │   └── extractors/     # Metric extractors
+│   │       ├── base.py     # Base extractor class
+│   │       ├── speed.py    # Speed OCR extractor
+│   │       ├── gforce.py   # G-force OCR extractor
+│   │       └── torque.py   # Torque color analyzer
+│   ├── gui/
 │   │   ├── main_window.py  # Main application window
-│   │   ├── widgets/        # Custom widgets
-│   │   └── dialogs/        # Configuration dialogs
-│   └── config/             # Configuration management
-├── tests/                  # Unit tests
-├── data/                   # Sample data and outputs
-├── config.json             # User configuration
-└── requirements.txt
+│   │   ├── styles.py       # Modern UI styling
+│   │   ├── splash.py       # Splash screen
+│   │   └── widgets/        # Custom UI widgets
+│   └── config/
+│       └── settings.py     # Configuration management
+├── assets/                 # App icons and images
+└── dist/                   # Built executables (after build)
 ```
 
-## Usage
+## ⚙️ Configuration
 
-### GUI Mode (Recommended)
-```bash
-python -m src.gui.main_window
-```
+### Preprocessing Presets
 
-### CLI Mode
-```bash
-# Extract all metrics
-python -m src.core.extract --video path/to/video.mp4 --output data/results.csv
+The app includes optimized presets for different video types:
 
-# Extract specific metric
-python -m src.core.extract --video path/to/video.mp4 --metric speed
-```
+| Preset | Best For |
+|--------|----------|
+| `racing_hud` | Racing game/sim overlays (default) |
+| `f1_tv` | Official F1 TV broadcasts |
+| `digital_display` | LCD/digital dashboard displays |
+| `minimal` | Clean overlays needing little processing |
+| `aggressive` | Noisy or low-quality video |
 
-## Metrics Configuration
+### OCR Engine Selection
 
-Each metric can be individually configured with:
-- **ROI** (Region of Interest) - The area of the video frame to analyze
-- **Extraction Method** - OCR or color analysis
-- **Thresholds** - HSV ranges for color detection, confidence for OCR
+- **PaddleOCR** (default) - Best accuracy, especially for varied fonts
+- **EasyOCR** - Simpler installation, used as fallback
 
-## License
+The app automatically selects PaddleOCR if available, falling back to EasyOCR.
 
-MIT
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## 📄 License
+
+MIT License - see LICENSE file for details.
