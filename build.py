@@ -90,12 +90,12 @@ VSVersionInfo(
       StringTable(
         u'040904B0',
         [StringStruct(u'CompanyName', u'FSAE'),
-        StringStruct(u'FileDescription', u'FSAE Data Extractor - Video Telemetry Analysis'),
+        StringStruct(u'FileDescription', u'FSAE Scraper - Video Telemetry Analysis'),
         StringStruct(u'FileVersion', u'1.0.0'),
-        StringStruct(u'InternalName', u'fsae_extractor'),
-        StringStruct(u'LegalCopyright', u'Copyright 2024'),
-        StringStruct(u'OriginalFilename', u'FSAE_Data_Extractor.exe'),
-        StringStruct(u'ProductName', u'FSAE Data Extractor'),
+        StringStruct(u'InternalName', u'fsae_scraper'),
+        StringStruct(u'LegalCopyright', u'Copyright 2026'),
+        StringStruct(u'OriginalFilename', u'FSAE_Scraper.exe'),
+        StringStruct(u'ProductName', u'FSAE Scraper'),
         StringStruct(u'ProductVersion', u'1.0.0')])
       ]),
     VarFileInfo([VarStruct(u'Translation', [1033, 1200])])

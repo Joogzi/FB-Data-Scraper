@@ -1,0 +1,97 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install PyQt6 opencv-python numpy pyqtgraph pyyaml
+          # Install GPU-capable PaddlePaddle (CUDA 11.8) - will use GPU if available, CPU otherwise
+          pip install paddlepaddle-gpu==2.6.0.post120 -f https://www.paddlepaddle.org.cn/whl/windows/mkl/avx/stable.html
+          pip install paddleocr
+          # EasyOCR with PyTorch CUDA support
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+          pip install easyocr
+
+      - name: Get version info
+        id: version
+        run: |
+          # Count commits for build number
+          $commitCount = git rev-list --count HEAD
+          $shortSha = $env:GITHUB_SHA.Substring(0,7)
+          $version = "1.0.$commitCount"
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "short_sha=$shortSha" >> $env:GITHUB_OUTPUT
+          echo "Building version: $version"
+
+      - name: Build executable
+        run: |
+          pyinstaller fsae_extractor.spec --clean
+          # Rename exe to include version
+          $version = "${{ steps.version.outputs.version }}"
+          Move-Item "dist/FSAE_Scraper.exe" "dist/FSAE_Scraper_v$version.exe"
+
+      - name: Get current date
+        id: date
+        run: |
+          echo "date=$(Get-Date -Format 'yyyy-MM-dd')" >> $env:GITHUB_OUTPUT
+          echo "datetime=$(Get-Date -Format 'yyyy-MM-dd_HH-mm')" >> $env:GITHUB_OUTPUT
+
+      - name: Delete existing latest release
+        run: |
+          gh release delete latest --yes --cleanup-tag
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "FSAE Scraper v${{ steps.version.outputs.version }}"
+          body: |
+            ## 🚀 FSAE Scraper v${{ steps.version.outputs.version }}
+            
+            **Commit:** `${{ steps.version.outputs.short_sha }}`
+            **Date:** ${{ steps.date.outputs.date }}
+            **Branch:** ${{ github.ref_name }}
+            
+            ### 📥 Download
+            Download `FSAE_Scraper_v${{ steps.version.outputs.version }}.exe` below and run it - no installation required!
+            
+            ### 🎮 GPU Acceleration
+            This build supports NVIDIA GPU acceleration (CUDA 11.8):
+            - **With NVIDIA GPU + CUDA installed:** Automatically uses GPU for faster OCR
+            - **Without GPU/CUDA:** Falls back to CPU (still works, just slower)
+            
+            ---
+            *This release is automatically updated on every push to master.*
+          files: |
+            dist/FSAE_Scraper_v${{ steps.version.outputs.version }}.exe
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

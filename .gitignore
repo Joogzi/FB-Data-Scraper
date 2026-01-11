@@ -40,3 +40,7 @@ Thumbs.db
 build/
 dist/
 *.egg-info/
+
+#misc
+times.txt
+speeds(example).csv

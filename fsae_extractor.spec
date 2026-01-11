@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec file for FSAE Data Extractor.
+PyInstaller spec file for FSAE Scraper.
 
 This builds a standalone Windows executable that can be distributed
 to other users without requiring Python installation.
@@ -107,7 +107,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='FSAE_Data_Extractor',
+    name='FSAE_Scraper',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

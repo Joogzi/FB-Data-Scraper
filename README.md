@@ -1,4 +1,4 @@
-# FSAE Data Extractor
+# FSAE Scraper
 
 A professional desktop application for extracting telemetry data from racing/motorsport onboard videos using advanced OCR and computer vision.
 
@@ -23,9 +23,27 @@ A professional desktop application for extracting telemetry data from racing/mot
 
 ### Option 1: Download Executable (Easiest)
 
-1. Download the latest release from the [Releases](releases) page
-2. Run `FSAE_Data_Extractor.exe`
+1. Download the latest release from the [Releases](../../releases/latest) page
+2. Run `FSAE_Scraper_vX.X.X.exe` (version number will be in the filename)
 3. No Python installation required!
+
+> 💡 **Note:** The executable is automatically built and released on every commit to master.
+
+#### 🎮 GPU Acceleration (Optional)
+
+The executable supports **NVIDIA GPU acceleration** for faster OCR processing:
+
+| Setup | Performance |
+|-------|-------------|
+| **With NVIDIA GPU + CUDA** | ⚡ Fast - Uses GPU automatically |
+| **Without GPU** | ✅ Works fine - Falls back to CPU |
+
+**To enable GPU acceleration:**
+1. Have an NVIDIA GPU (GTX 10 series or newer recommended)
+2. Install [CUDA Toolkit 11.8](https://developer.nvidia.com/cuda-11-8-0-download-archive)
+3. That's it! The exe will detect CUDA and use your GPU automatically
+
+> The exe works without CUDA - it's just slower. No extra setup needed for CPU-only usage.
 
 ### Option 2: Install from Source
 
@@ -41,6 +59,18 @@ source venv/bin/activate  # Linux/Mac
 
 # Install dependencies
 pip install -r requirements.txt
+```
+
+#### GPU Support (Source Installation)
+
+For GPU acceleration when running from source:
+
+```bash
+# Instead of paddlepaddle, install the GPU version:
+pip install paddlepaddle-gpu -f https://www.paddlepaddle.org.cn/whl/windows/mkl/avx/stable.html
+
+# For EasyOCR GPU support:
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 ```
 
 #### Note for PaddleOCR on Windows:
