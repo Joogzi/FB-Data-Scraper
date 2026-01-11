@@ -10,6 +10,20 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QColor
 
 
+class NoScrollSpinBox(QSpinBox):
+    """SpinBox that ignores scroll wheel events."""
+    
+    def wheelEvent(self, event):
+        event.ignore()  # Pass to parent for scrolling the panel
+
+
+class NoScrollDoubleSpinBox(QDoubleSpinBox):
+    """DoubleSpinBox that ignores scroll wheel events."""
+    
+    def wheelEvent(self, event):
+        event.ignore()  # Pass to parent for scrolling the panel
+
+
 class MetricCard(QGroupBox):
     """Card widget for configuring a single metric."""
     
@@ -127,9 +141,9 @@ class SpeedMetricCard(MetricCard):
         )
         
         # Add speed-specific settings
-        self.max_speed_spin = QSpinBox()
+        self.max_speed_spin = NoScrollSpinBox()
         self.max_speed_spin.setRange(50, 500)
-        self.max_speed_spin.setValue(200)
+        self.max_speed_spin.setValue(100)  # Default 100 km/h
         self.settings_layout.addRow("Max Speed:", self.max_speed_spin)
 
 
@@ -140,16 +154,49 @@ class GForceMetricCard(MetricCard):
         super().__init__(
             "gforce",
             "G-Force", 
-            "Extract G-force readings using OCR",
+            "Extract G-force readings (x.xx format) using OCR",
             parent
         )
         
         # Add G-force-specific settings
-        self.max_g_spin = QDoubleSpinBox()
-        self.max_g_spin.setRange(0.5, 5.0)
-        self.max_g_spin.setValue(2.7)
+        self.max_g_spin = NoScrollDoubleSpinBox()
+        self.max_g_spin.setRange(0.5, 10.0)
+        self.max_g_spin.setValue(4.0)  # Default 4G
         self.max_g_spin.setSingleStep(0.1)
         self.settings_layout.addRow("Max G:", self.max_g_spin)
+
+
+class KilowattMetricCard(MetricCard):
+    """Configuration card for kilowatt (power) metric."""
+    
+    def __init__(self, parent=None):
+        super().__init__(
+            "kw",
+            "Power (kW)", 
+            "Extract kilowatt readings (x.xx format) using OCR",
+            parent
+        )
+        
+        # Add kW-specific settings
+        self.max_kw_spin = NoScrollDoubleSpinBox()
+        self.max_kw_spin.setRange(10.0, 1000.0)
+        self.max_kw_spin.setValue(120.0)  # Default 120 kW
+        self.max_kw_spin.setSingleStep(10.0)
+        self.settings_layout.addRow("Max kW:", self.max_kw_spin)
+
+
+class PedalMetricCard(MetricCard):
+    """Configuration card for pedal position metric (throttle/brake)."""
+    
+    def __init__(self, pedal_type: str, parent=None):
+        display_name = "Throttle" if pedal_type == "throttle" else "Brake"
+        super().__init__(
+            pedal_type,
+            display_name, 
+            f"Detect {display_name.lower()} pedal position from bar (0-100%)",
+            parent
+        )
+        self.pedal_type = pedal_type
 
 
 class TorqueMetricCard(MetricCard):
@@ -159,7 +206,7 @@ class TorqueMetricCard(MetricCard):
         super().__init__(
             f"torque_{wheel_name}",
             display_name,
-            "Analyze color overlay for torque visualization",
+            "Bar position analysis (-1 to +1)",
             parent
         )
         self.wheel_name = wheel_name
@@ -195,6 +242,23 @@ class MetricPanel(QScrollArea):
         self.gforce_card.select_roi_requested.connect(self.select_roi_requested)
         layout.addWidget(self.gforce_card)
         
+        self.kw_card = KilowattMetricCard()
+        self.kw_card.select_roi_requested.connect(self.select_roi_requested)
+        layout.addWidget(self.kw_card)
+        
+        # Section: Pedal Metrics
+        pedal_label = QLabel("Pedal Inputs")
+        pedal_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #74c0fc;")
+        layout.addWidget(pedal_label)
+        
+        self.throttle_card = PedalMetricCard("throttle")
+        self.throttle_card.select_roi_requested.connect(self.select_roi_requested)
+        layout.addWidget(self.throttle_card)
+        
+        self.brake_card = PedalMetricCard("brake")
+        self.brake_card.select_roi_requested.connect(self.select_roi_requested)
+        layout.addWidget(self.brake_card)
+        
         # Section: Torque Metrics
         torque_label = QLabel("Wheel Torque")
         torque_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #74c0fc;")
@@ -217,6 +281,12 @@ class MetricPanel(QScrollArea):
             return self.speed_card
         elif metric_name == "gforce":
             return self.gforce_card
+        elif metric_name == "kw":
+            return self.kw_card
+        elif metric_name == "throttle":
+            return self.throttle_card
+        elif metric_name == "brake":
+            return self.brake_card
         elif metric_name.startswith("torque_"):
             wheel = metric_name.replace("torque_", "")
             return self.torque_cards.get(wheel)

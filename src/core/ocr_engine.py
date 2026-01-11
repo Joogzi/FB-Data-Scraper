@@ -78,18 +78,40 @@ class PaddleOCREngine(BaseOCREngine):
         try:
             from paddleocr import PaddleOCR
             
-            self._reader = PaddleOCR(
-                use_angle_cls=self.use_angle_cls,
-                lang='en',
-                use_gpu=self.use_gpu,
-                show_log=False,  # Suppress verbose logging
-                # Optimize for single-line numeric text
-                det_db_thresh=0.3,
-                det_db_box_thresh=0.5,
-                rec_batch_num=1,
-            )
-            self._initialized = True
-            return True
+            # PaddleOCR 3.x has a completely new API
+            # Try the new API first, then fall back to older versions
+            try:
+                # New PaddleOCR 3.x API - disable document processing to speed up init
+                self._reader = PaddleOCR(
+                    lang='en',
+                    use_doc_orientation_classify=False,  # Skip document orientation
+                    use_doc_unwarping=False,  # Skip document unwarping
+                    use_textline_orientation=False,  # Skip textline orientation
+                )
+                self._initialized = True
+                print("PaddleOCR 3.x initialized successfully")
+                return True
+            except TypeError as e:
+                print(f"PaddleOCR 3.x init failed: {e}, trying older API...")
+            
+            # Try PaddleOCR 2.x API
+            try:
+                self._reader = PaddleOCR(
+                    use_angle_cls=self.use_angle_cls,
+                    lang='en',
+                    use_gpu=self.use_gpu,
+                    show_log=False,
+                    det_db_thresh=0.1,
+                    det_db_box_thresh=0.3,
+                    det_db_unclip_ratio=1.8,
+                )
+                self._initialized = True
+                print("PaddleOCR 2.x initialized successfully")
+                return True
+            except TypeError as e:
+                print(f"PaddleOCR 2.x init failed: {e}")
+                return False
+            
         except Exception as e:
             print(f"Failed to initialize PaddleOCR: {e}")
             return False
@@ -100,33 +122,84 @@ class PaddleOCREngine(BaseOCREngine):
             return []
         
         try:
-            # PaddleOCR expects RGB, but works with BGR too
-            results = self._reader.ocr(image, cls=self.use_angle_cls)
+            # PaddleOCR works better with larger images - upscale if too small
+            h, w = image.shape[:2]
+            scale = 1.0
+            if h < 50 or w < 50:
+                scale = max(50 / h, 50 / w, 2.0)
+                image = cv2.resize(image, None, fx=scale, fy=scale, 
+                                   interpolation=cv2.INTER_CUBIC)
             
-            ocr_results = []
-            if results and results[0]:
-                for line in results[0]:
-                    if line and len(line) >= 2:
-                        bbox_points = line[0]  # [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
-                        text_info = line[1]  # (text, confidence)
+            # Ensure image is RGB (PaddleOCR expects RGB)
+            if len(image.shape) == 2:
+                # Grayscale - convert to RGB
+                image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+            elif image.shape[2] == 3:
+                # BGR to RGB
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            
+            # PaddleOCR 3.x uses predict() method, 2.x uses ocr() method
+            if hasattr(self._reader, 'predict'):
+                # PaddleOCR 3.x API
+                result = self._reader.predict(image)
+                ocr_results = []
+                
+                # New API returns a LIST of dicts, each with 'rec_texts' and 'rec_scores'
+                # e.g. [{'rec_texts': ['123'], 'rec_scores': [0.99], 'dt_polys': [...]}]
+                if result and isinstance(result, list):
+                    for page_result in result:
+                        if not isinstance(page_result, dict):
+                            continue
+                        texts = page_result.get('rec_texts', [])
+                        scores = page_result.get('rec_scores', [])
+                        boxes = page_result.get('dt_polys', []) or page_result.get('rec_polys', [])
                         
-                        if text_info and len(text_info) >= 2:
-                            text = str(text_info[0])
-                            confidence = float(text_info[1])
-                            
-                            # Convert polygon to bbox
-                            xs = [p[0] for p in bbox_points]
-                            ys = [p[1] for p in bbox_points]
-                            bbox = (int(min(xs)), int(min(ys)), 
-                                   int(max(xs)), int(max(ys)))
-                            
-                            ocr_results.append(OCRResult(
-                                text=text,
-                                confidence=confidence,
-                                bbox=bbox
-                            ))
+                        for i, text in enumerate(texts):
+                            if text:
+                                confidence = scores[i] if i < len(scores) else 0.5
+                                bbox = None
+                                if boxes and i < len(boxes) and boxes[i] is not None:
+                                    pts = boxes[i]
+                                    try:
+                                        xs = [p[0] / scale for p in pts]
+                                        ys = [p[1] / scale for p in pts]
+                                        bbox = (int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys)))
+                                    except (TypeError, IndexError):
+                                        pass
+                                
+                                ocr_results.append(OCRResult(
+                                    text=str(text),
+                                    confidence=float(confidence),
+                                    bbox=bbox
+                                ))
+                return ocr_results
+            else:
+                # PaddleOCR 2.x API
+                results = self._reader.ocr(image, cls=self.use_angle_cls)
             
-            return ocr_results
+                ocr_results = []
+                if results and results[0]:
+                    for line in results[0]:
+                        if line and len(line) >= 2:
+                            bbox_points = line[0]
+                            text_info = line[1]
+                            
+                            if text_info and len(text_info) >= 2:
+                                text = str(text_info[0])
+                                confidence = float(text_info[1])
+                                
+                                xs = [p[0] / scale for p in bbox_points]
+                                ys = [p[1] / scale for p in bbox_points]
+                                bbox = (int(min(xs)), int(min(ys)), 
+                                       int(max(xs)), int(max(ys)))
+                                
+                                ocr_results.append(OCRResult(
+                                    text=text,
+                                    confidence=confidence,
+                                    bbox=bbox
+                                ))
+                
+                return ocr_results
         except Exception as e:
             print(f"PaddleOCR error: {e}")
             return []
@@ -213,7 +286,9 @@ class OCREngine:
         backends_to_try = []
         
         if self.backend_type == OCRBackend.AUTO:
-            backends_to_try = [OCRBackend.PADDLE, OCRBackend.EASYOCR]
+            # EasyOCR first - it's MUCH faster for real-time video processing
+            # PaddleOCR 3.x is too slow (10+ seconds per frame)
+            backends_to_try = [OCRBackend.EASYOCR, OCRBackend.PADDLE]
         else:
             backends_to_try = [self.backend_type]
         
@@ -279,16 +354,92 @@ class OCREngine:
         cleaned = cleaned.replace('O', '0').replace('L', '1').replace('I', '1')
         cleaned = cleaned.replace('S', '5').replace('B', '8').replace('G', '6')
         cleaned = cleaned.replace(',', '.')  # Handle European decimal notation
+        # Fix common decimal point misreads
+        cleaned = cleaned.replace(' . ', '.').replace(' .', '.').replace('. ', '.')
         
         # Find numeric pattern (supports negative and decimal)
-        match = re.search(r'-?\d+\.?\d*', cleaned)
+        # Try multiple patterns from most specific to least
+        patterns = [
+            r'-?\d+\.\d+',      # Decimal with digits after (e.g., "1.23")
+            r'-?\d+\.?\d*',     # Any number with optional decimal
+        ]
         
+        for pattern in patterns:
+            match = re.search(pattern, cleaned)
+            if match:
+                try:
+                    value = float(match.group())
+                    return value, confidence, text
+                except ValueError:
+                    continue
+        
+        return None, confidence, text
+    
+    def read_decimal(self, image: np.ndarray, decimal_places: int = 2) -> Tuple[Optional[float], float, str]:
+        """
+        Specialized method to read decimal values (like G-force, kW).
+        
+        More aggressive about finding decimal points.
+        
+        Args:
+            image: Input image
+            decimal_places: Expected decimal places (for validation)
+            
+        Returns:
+            Tuple of (decimal_value, confidence, raw_text)
+        """
+        text, confidence = self.read_text_simple(image)
+        
+        if not text:
+            return None, 0.0, ""
+        
+        # Clean text with more aggressive decimal handling
+        cleaned = text.upper().strip()
+        
+        # Common OCR mistakes
+        cleaned = cleaned.replace('O', '0').replace('L', '1').replace('I', '1')
+        cleaned = cleaned.replace('S', '5').replace('B', '8').replace('G', '6')
+        cleaned = cleaned.replace(',', '.')
+        
+        # Sometimes OCR reads decimal as space or other chars
+        # Try to find patterns like "1 23" -> "1.23" or "1:23" -> "1.23"
+        cleaned = re.sub(r'(\d)\s+(\d)', r'\1.\2', cleaned)  # "1 23" -> "1.23"
+        cleaned = re.sub(r'(\d)[:\-](\d)', r'\1.\2', cleaned)  # "1:23" or "1-23" -> "1.23"
+        
+        # Find decimal number pattern
+        match = re.search(r'-?\d+\.\d+', cleaned)
         if match:
             try:
                 value = float(match.group())
                 return value, confidence, text
             except ValueError:
                 pass
+        
+        # Fallback: try to construct decimal if we have multiple digit groups
+        digits_only = re.findall(r'\d+', cleaned)
+        if len(digits_only) >= 2:
+            # Assume first group is integer part, second is decimal
+            try:
+                value = float(f"{digits_only[0]}.{digits_only[1]}")
+                return value, confidence * 0.8, text  # Lower confidence for reconstructed
+            except ValueError:
+                pass
+        elif len(digits_only) == 1 and len(digits_only[0]) >= 2:
+            # Single digit group - might be missing decimal
+            # For G-force like values, assume format X.XX
+            num_str = digits_only[0]
+            if len(num_str) == 3:  # e.g., "123" -> "1.23"
+                try:
+                    value = float(f"{num_str[0]}.{num_str[1:]}")
+                    return value, confidence * 0.7, text
+                except ValueError:
+                    pass
+            elif len(num_str) == 2:  # e.g., "12" -> "1.2" or "0.12"
+                try:
+                    value = float(f"0.{num_str}")
+                    return value, confidence * 0.7, text
+                except ValueError:
+                    pass
         
         return None, confidence, text
     
@@ -305,6 +456,72 @@ class OCREngine:
             return int(round(value)), confidence, raw_text
         
         return None, confidence, raw_text
+    
+    def read_signed_number(self, image: np.ndarray) -> Tuple[Optional[float], float, str]:
+        """
+        Specialized method to read signed numeric values (can be negative).
+        
+        Handles cases where:
+        - Minus sign is detected as "-" or similar chars
+        - OCR might miss the minus sign entirely
+        - Values like "-27" should return -27.0
+        
+        Returns:
+            Tuple of (signed_value, confidence, raw_text)
+        """
+        text, confidence = self.read_text_simple(image)
+        
+        if not text:
+            return None, 0.0, ""
+        
+        # Clean text
+        cleaned = text.upper().strip()
+        
+        # Common OCR mistakes for digits
+        cleaned = cleaned.replace('O', '0').replace('L', '1').replace('I', '1')
+        cleaned = cleaned.replace('S', '5').replace('B', '8').replace('G', '6')
+        cleaned = cleaned.replace(',', '.')
+        
+        # Handle minus sign - OCR might read it as various characters
+        # Common misreads: '-', '—', '–', '_', '~', 'r', 'v'
+        # Check if there's a leading character that could be a minus
+        is_negative = False
+        
+        # Look for minus-like characters at the start
+        if cleaned and cleaned[0] in '-—–_~':
+            is_negative = True
+            cleaned = cleaned[1:].strip()
+        elif cleaned.startswith('R') or cleaned.startswith('V'):
+            # Sometimes OCR misreads '-' as 'r' or 'v' at start
+            # Only treat as negative if followed by digits
+            rest = cleaned[1:].strip()
+            if rest and rest[0].isdigit():
+                is_negative = True
+                cleaned = rest
+        
+        # Also check for explicit "MINUS" or similar
+        if cleaned.startswith('MINUS'):
+            is_negative = True
+            cleaned = cleaned[5:].strip()
+        
+        # Find numeric pattern
+        patterns = [
+            r'\d+\.\d+',      # Decimal with digits after
+            r'\d+',            # Integer
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, cleaned)
+            if match:
+                try:
+                    value = float(match.group())
+                    if is_negative:
+                        value = -value
+                    return value, confidence, text
+                except ValueError:
+                    continue
+        
+        return None, confidence, text
     
     @property
     def is_initialized(self) -> bool:
@@ -323,6 +540,8 @@ class OCREngine:
 
 # Singleton instance for shared OCR engine
 _shared_engine: Optional[OCREngine] = None
+_shared_backend: Optional[OCRBackend] = None
+_shared_use_gpu: bool = True
 
 
 def get_shared_ocr_engine(backend: OCRBackend = OCRBackend.AUTO, 
@@ -332,18 +551,31 @@ def get_shared_ocr_engine(backend: OCRBackend = OCRBackend.AUTO,
     
     This is useful to avoid initializing multiple OCR engines,
     which would waste memory and time.
-    """
-    global _shared_engine
     
-    if _shared_engine is None:
+    If backend/gpu settings differ from current engine, recreates it.
+    """
+    global _shared_engine, _shared_backend, _shared_use_gpu
+    
+    # Recreate if settings changed or not initialized
+    if (_shared_engine is None or 
+        _shared_backend != backend or 
+        _shared_use_gpu != use_gpu):
+        
+        if _shared_engine is not None:
+            _shared_engine.cleanup()
+        
         _shared_engine = OCREngine(backend=backend, use_gpu=use_gpu)
+        _shared_backend = backend
+        _shared_use_gpu = use_gpu
     
     return _shared_engine
 
 
 def cleanup_shared_engine() -> None:
     """Cleanup the shared OCR engine."""
-    global _shared_engine
+    global _shared_engine, _shared_backend, _shared_use_gpu
     if _shared_engine:
         _shared_engine.cleanup()
         _shared_engine = None
+        _shared_backend = None
+        _shared_use_gpu = True

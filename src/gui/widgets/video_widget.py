@@ -39,6 +39,9 @@ class VideoWidget(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMouseTracking(True)
         
+        # Enable focus so parent window receives key events
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        
     def set_frame(self, frame: np.ndarray) -> None:
         """Set the current video frame (BGR format from OpenCV)."""
         self._frame = frame
@@ -203,6 +206,9 @@ class VideoWidget(QWidget):
     
     def mousePressEvent(self, event: QMouseEvent) -> None:
         """Handle mouse press for ROI selection."""
+        # Set focus to this widget so key events go to parent window
+        self.setFocus()
+        
         if self._selecting_roi and event.button() == Qt.MouseButton.LeftButton:
             self._selection_start = event.pos()
             self._selection_rect = QRect(self._selection_start, QSize(0, 0))
@@ -236,6 +242,14 @@ class VideoWidget(QWidget):
             
             self.cancel_roi_selection()
         super().mouseReleaseEvent(event)
+    
+    def keyPressEvent(self, event) -> None:
+        """Forward key events to parent (MainWindow) for handling."""
+        # Let parent window handle keyboard shortcuts
+        if self.parent():
+            self.parent().keyPressEvent(event)
+        else:
+            super().keyPressEvent(event)
     
     def resizeEvent(self, event) -> None:
         """Handle resize to update scaling."""

@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Dict, Optional
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QAction, QKeySequence, QColor
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -20,12 +20,83 @@ from src.core.video import VideoReader
 from src.core.extractors.base import ROI, ExtractionResult
 from src.core.extractors.speed import SpeedExtractor
 from src.core.extractors.gforce import GForceExtractor
-from src.core.extractors.torque import FourWheelTorqueExtractor, TorqueResult
+from src.core.extractors.kilowatt import KilowattExtractor
+from src.core.extractors.torque import FourWheelTorqueExtractor, TorqueResult, PedalExtractor
 from src.core.ocr_engine import cleanup_shared_engine
 from src.config.settings import ConfigManager, MetricConfig
 from src.gui.widgets.video_widget import VideoWidget
 from src.gui.widgets.metric_panel import MetricPanel
 from src.gui.widgets.transport import TransportControls
+
+
+class OCRInitWorker(QObject):
+    """Worker for initializing OCR in a background thread."""
+    finished = pyqtSignal(str, bool, str)  # backend_name, cuda_available, error_msg
+    status = pyqtSignal(str)  # Status updates
+    
+    def __init__(self, backend: str, speed_extractor, gforce_extractor, kw_extractor):
+        super().__init__()
+        self.backend = backend
+        self.speed_extractor = speed_extractor
+        self.gforce_extractor = gforce_extractor
+        self.kw_extractor = kw_extractor
+    
+    def run(self):
+        """Initialize OCR engines in background."""
+        from src.core.ocr_engine import OCRBackend, cleanup_shared_engine
+        
+        try:
+            self.status.emit(f"Cleaning up previous OCR engine...")
+            cleanup_shared_engine()
+            
+            # Map backend string to enum
+            backend_map = {
+                "paddle": OCRBackend.PADDLE,
+                "easyocr": OCRBackend.EASYOCR,
+                "auto": OCRBackend.AUTO
+            }
+            ocr_backend = backend_map.get(self.backend, OCRBackend.AUTO)
+            
+            # Check for CUDA availability
+            cuda_available = False
+            try:
+                import torch
+                cuda_available = torch.cuda.is_available()
+            except ImportError:
+                pass
+            
+            self.status.emit(f"Setting up extractors for {self.backend}...")
+            
+            # Clear and set backend for extractors
+            self.speed_extractor._ocr_engine = None
+            self.gforce_extractor._ocr_engine = None
+            self.kw_extractor._ocr_engine = None
+            
+            self.speed_extractor.ocr_backend = ocr_backend
+            self.gforce_extractor.ocr_backend = ocr_backend
+            self.kw_extractor.ocr_backend = ocr_backend
+            
+            self.speed_extractor.use_gpu = cuda_available
+            self.gforce_extractor.use_gpu = cuda_available
+            self.kw_extractor.use_gpu = cuda_available
+            
+            self.status.emit(f"Initializing {self.backend} OCR (may download models)...")
+            
+            self.speed_extractor.initialize()
+            self.gforce_extractor.initialize()
+            self.kw_extractor.initialize()
+            
+            # Get backend name from initialized engine
+            backend_name = "Unknown"
+            if hasattr(self.speed_extractor, '_ocr_engine') and self.speed_extractor._ocr_engine:
+                backend_name = self.speed_extractor._ocr_engine.active_backend or "Unknown"
+            elif hasattr(self.kw_extractor, '_ocr_engine') and self.kw_extractor._ocr_engine:
+                backend_name = self.kw_extractor._ocr_engine.active_backend or "Unknown"
+            
+            self.finished.emit(backend_name, cuda_available, "")
+            
+        except Exception as e:
+            self.finished.emit("", False, str(e))
 
 
 class MainWindow(QMainWindow):
@@ -44,7 +115,10 @@ class MainWindow(QMainWindow):
         # Extractors
         self.speed_extractor = SpeedExtractor()
         self.gforce_extractor = GForceExtractor()
+        self.kw_extractor = KilowattExtractor()
         self.torque_extractor = FourWheelTorqueExtractor()
+        self.throttle_extractor = PedalExtractor(pedal_type="accelerator")
+        self.brake_extractor = PedalExtractor(pedal_type="brake")
         
         # Playback state
         self._current_frame_idx = 0
@@ -100,6 +174,11 @@ class MainWindow(QMainWindow):
         self.status_label = QLabel("Ready")
         self.status_bar.addWidget(self.status_label)
         
+        # OCR backend indicator
+        self.ocr_label = QLabel("OCR: Initializing...")
+        self.ocr_label.setStyleSheet("color: #888; padding-right: 10px;")
+        self.status_bar.addPermanentWidget(self.ocr_label)
+        
         self.progress_bar = QProgressBar()
         self.progress_bar.setMaximumWidth(200)
         self.progress_bar.hide()
@@ -148,8 +227,9 @@ class MainWindow(QMainWindow):
         # Tools menu
         tools_menu = menubar.addMenu("&Tools")
         
-        init_ocr_action = QAction("Initialize &OCR", self)
-        init_ocr_action.triggered.connect(self._initialize_ocr)
+        # OCR submenu - only EasyOCR (PaddleOCR 3.x causes freezing)
+        init_ocr_action = QAction("Re-initialize &OCR (EasyOCR)", self)
+        init_ocr_action.triggered.connect(lambda: self._initialize_ocr_backend("easyocr"))
         tools_menu.addAction(init_ocr_action)
         
         # Help menu
@@ -188,14 +268,19 @@ class MainWindow(QMainWindow):
                 self._pause()
             else:
                 self._play()
+            event.accept()
         elif key == Qt.Key.Key_Right:
-            self._step(1 if not event.modifiers() else 10)
+            self._step(1)  # 1 frame forward
+            event.accept()
         elif key == Qt.Key.Key_Left:
-            self._step(-1 if not event.modifiers() else -10)
+            self._step(-1)  # 1 frame backward
+            event.accept()
         elif key == Qt.Key.Key_Up:
-            self._step(10)
+            self._step(10)  # 10 frames forward
+            event.accept()
         elif key == Qt.Key.Key_Down:
-            self._step(-10)
+            self._step(-10)  # 10 frames backward
+            event.accept()
         else:
             super().keyPressEvent(event)
     
@@ -251,16 +336,46 @@ class MainWindow(QMainWindow):
     
     def _run_extractions(self, frame):
         """Run all enabled extractors on the current frame."""
-        # Speed
+        # ===== Extract pedals FIRST (needed for kW sign correction) =====
+        throttle_pct = 0.0
+        brake_pct = 0.0
+        
+        # Throttle pedal
+        if self.throttle_extractor.roi and hasattr(self.metric_panel, 'throttle_card') and self.metric_panel.throttle_card.is_enabled:
+            result = self.throttle_extractor.extract_from_roi(frame)
+            if result.is_valid:
+                throttle_pct = result.value * 100
+                self.metric_panel.set_value("throttle", f"{throttle_pct:.0f}%")
+                self.video_widget.update_roi_value("throttle", f"{throttle_pct:.0f}%")
+            else:
+                self.metric_panel.set_value("throttle", "--")
+        
+        # Brake pedal
+        if self.brake_extractor.roi and hasattr(self.metric_panel, 'brake_card') and self.metric_panel.brake_card.is_enabled:
+            result = self.brake_extractor.extract_from_roi(frame)
+            if result.is_valid:
+                brake_pct = result.value * 100
+                # If throttle is significantly pressed, brake should be 0
+                # (unless brake value is very high, indicating actual braking)
+                if throttle_pct > 10 and brake_pct < 30:
+                    brake_pct = 0.0
+                self.metric_panel.set_value("brake", f"{brake_pct:.0f}%")
+                self.video_widget.update_roi_value("brake", f"{brake_pct:.0f}%")
+            else:
+                self.metric_panel.set_value("brake", "--")
+        
+        # ===== Speed =====
+        speed_value = 0.0
         if self.speed_extractor.roi and self.metric_panel.speed_card.is_enabled:
             result = self.speed_extractor.extract_from_roi(frame)
             if result.is_valid:
+                speed_value = float(result.value)
                 self.metric_panel.set_value("speed", f"{result.value} km/h")
                 self.video_widget.update_roi_value("speed", f"{result.value}")
             else:
                 self.metric_panel.set_value("speed", "--")
         
-        # G-force
+        # ===== G-force (with decimals) =====
         if self.gforce_extractor.roi and self.metric_panel.gforce_card.is_enabled:
             result = self.gforce_extractor.extract_from_roi(frame)
             if result.is_valid:
@@ -268,6 +383,20 @@ class MainWindow(QMainWindow):
                 self.video_widget.update_roi_value("gforce", f"{result.value:.2f}G")
             else:
                 self.metric_panel.set_value("gforce", "--")
+        
+        # ===== Kilowatts (uses speed + brake for sign correction) =====
+        if self.kw_extractor.roi and hasattr(self.metric_panel, 'kw_card') and self.metric_panel.kw_card.is_enabled:
+            # Pass speed and brake data for sign correction
+            # Rule: if speed > 10 km/h and brake is on, kW must be negative
+            self.kw_extractor.speed = speed_value
+            self.kw_extractor.brake_pct = brake_pct
+            
+            result = self.kw_extractor.extract_from_roi(frame)
+            if result.is_valid:
+                self.metric_panel.set_value("kw", f"{result.value:.1f} kW")
+                self.video_widget.update_roi_value("kw", f"{result.value:.1f}")
+            else:
+                self.metric_panel.set_value("kw", "--")
         
         # Torque (all wheels)
         results = self.torque_extractor.extract_all(frame)
@@ -345,6 +474,12 @@ class MainWindow(QMainWindow):
             self.speed_extractor.roi = roi
         elif metric_name == "gforce":
             self.gforce_extractor.roi = roi
+        elif metric_name == "kw":
+            self.kw_extractor.roi = roi
+        elif metric_name == "throttle":
+            self.throttle_extractor.roi = roi
+        elif metric_name == "brake":
+            self.brake_extractor.roi = roi
         elif metric_name.startswith("torque_"):
             wheel = metric_name.replace("torque_", "")
             self.torque_extractor.set_roi(wheel, roi)
@@ -354,11 +489,17 @@ class MainWindow(QMainWindow):
         
         # Set display color based on metric type
         if metric_name == "speed":
-            color = QColor(0, 200, 255)
+            color = QColor(0, 200, 255)  # Cyan
         elif metric_name == "gforce":
-            color = QColor(255, 200, 0)
+            color = QColor(255, 200, 0)  # Gold
+        elif metric_name == "kw":
+            color = QColor(255, 100, 255)  # Magenta
+        elif metric_name == "throttle":
+            color = QColor(0, 255, 100)  # Green
+        elif metric_name == "brake":
+            color = QColor(255, 80, 80)  # Red
         else:
-            color = QColor(0, 255, 0)
+            color = QColor(0, 255, 0)  # Default green for torque
         
         self.video_widget.set_roi(metric_name, roi_tuple, color)
         
@@ -435,22 +576,76 @@ class MainWindow(QMainWindow):
     # --- OCR initialization ---
     
     def _initialize_ocr(self):
-        """Initialize OCR engines."""
-        self.status_label.setText("Initializing OCR...")
+        """Initialize OCR engines with auto backend selection."""
+        self._initialize_ocr_backend("auto")
+    
+    def _initialize_ocr_backend(self, backend: str):
+        """Initialize OCR engines with specified backend in a background thread."""
+        # Show loading state
+        self.status_label.setText(f"Initializing OCR ({backend})...")
+        self.ocr_label.setText("OCR: Initializing...")
         self.progress_bar.show()
         self.progress_bar.setRange(0, 0)  # Indeterminate
         
-        QApplication.processEvents()
+        # Create worker and thread
+        self._ocr_thread = QThread()
+        self._ocr_worker = OCRInitWorker(
+            backend,
+            self.speed_extractor,
+            self.gforce_extractor,
+            self.kw_extractor
+        )
+        self._ocr_worker.moveToThread(self._ocr_thread)
         
-        try:
-            self.speed_extractor.initialize()
-            self.gforce_extractor.initialize()
-            self.status_label.setText("OCR initialized")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to initialize OCR: {e}")
+        # Connect signals
+        self._ocr_thread.started.connect(self._ocr_worker.run)
+        self._ocr_worker.status.connect(self._on_ocr_status)
+        self._ocr_worker.finished.connect(self._on_ocr_finished)
+        self._ocr_worker.finished.connect(self._ocr_thread.quit)
+        self._ocr_worker.finished.connect(self._ocr_worker.deleteLater)
+        self._ocr_thread.finished.connect(self._ocr_thread.deleteLater)
+        
+        # Start the thread
+        self._ocr_thread.start()
+    
+    def _on_ocr_status(self, status: str):
+        """Update status label during OCR initialization."""
+        self.status_label.setText(status)
+    
+    def _on_ocr_finished(self, backend_name: str, cuda_available: bool, error_msg: str):
+        """Handle OCR initialization completion."""
+        self.progress_bar.hide()
+        
+        if error_msg:
+            QMessageBox.critical(self, "Error", f"Failed to initialize OCR: {error_msg}")
             self.status_label.setText("OCR initialization failed")
-        finally:
-            self.progress_bar.hide()
+            self.ocr_label.setText("OCR: Failed")
+            self.ocr_label.setStyleSheet("color: #F44336; padding-right: 10px;")
+            return
+        
+        # Get GPU info for message
+        cuda_info = ""
+        if cuda_available:
+            try:
+                import torch
+                gpu_name = torch.cuda.get_device_name(0)
+                cuda_info = f" [GPU: {gpu_name}]"
+            except:
+                cuda_info = " [GPU]"
+        
+        gpu_status = " (CUDA)" if cuda_available else " (CPU)"
+        self.ocr_label.setText(f"OCR: {backend_name.upper()}{gpu_status}")
+        self.ocr_label.setStyleSheet("color: #4CAF50; padding-right: 10px; font-weight: bold;")
+        self.status_label.setText(f"OCR initialized{cuda_info}")
+        
+        if cuda_available and backend_name.lower() != "unknown":
+            QMessageBox.information(self, "OCR Ready", 
+                f"OCR initialized with {backend_name.upper()}\n"
+                f"GPU: {cuda_info.strip(' []')}\n\n"
+                "OCR processing will use GPU acceleration.")
+        elif backend_name.lower() != "unknown":
+            QMessageBox.information(self, "OCR Ready", 
+                f"OCR initialized with {backend_name.upper()} (CPU mode)")
     
     # --- Export ---
     

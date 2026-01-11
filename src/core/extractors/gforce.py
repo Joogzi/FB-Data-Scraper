@@ -38,17 +38,20 @@ class GForceExtractor(BaseExtractor):
         
         # Use shared OCR engine to save memory
         self.use_shared_engine = True
+        
+        # OCR backend preference (can be overridden)
+        self.ocr_backend = OCRBackend.AUTO
     
     def initialize(self) -> None:
         """Initialize OCR engine and preprocessor."""
         if self.use_shared_engine:
             self._ocr_engine = get_shared_ocr_engine(
-                backend=OCRBackend.AUTO, 
+                backend=self.ocr_backend, 
                 use_gpu=self.use_gpu
             )
         else:
             self._ocr_engine = OCREngine(
-                backend=OCRBackend.AUTO,
+                backend=self.ocr_backend,
                 use_gpu=self.use_gpu
             )
         
@@ -86,9 +89,14 @@ class GForceExtractor(BaseExtractor):
         # Preprocess
         processed = self.preprocess(frame)
         
-        # Run OCR - use specialized numeric reader for decimals
+        # Run OCR - use specialized decimal reader for G-force values (e.g., 1.23G)
         try:
-            value, confidence, raw_text = self._ocr_engine.read_numbers(processed)
+            # Try decimal reader first (more accurate for G-force)
+            value, confidence, raw_text = self._ocr_engine.read_decimal(processed, decimal_places=2)
+            
+            # Fallback to regular number reader if decimal fails
+            if value is None:
+                value, confidence, raw_text = self._ocr_engine.read_numbers(processed)
             
             if value is None:
                 return ExtractionResult(

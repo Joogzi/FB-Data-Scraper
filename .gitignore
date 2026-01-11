@@ -4,7 +4,7 @@ __pycache__/
 *$py.class
 *.pyo
 
-# Virtual environments
+#virtual environments
 venv/
 env/
 .venv/
@@ -16,7 +16,7 @@ py311_env/
 *.swp
 *.swo
 
-# Config files (user-specific)
+# Config files 
 config.json
 *.yaml
 !example_config.yaml
