@@ -29,10 +29,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller
           pip install PyQt6 opencv-python numpy pyqtgraph pyyaml
-          # Install GPU-capable PaddlePaddle (CUDA 11.8) - will use GPU if available, CPU otherwise
-          pip install paddlepaddle-gpu==2.6.0.post120 -f https://www.paddlepaddle.org.cn/whl/windows/mkl/avx/stable.html
-          pip install paddleocr
-          # EasyOCR with PyTorch CUDA support
+          # EasyOCR with PyTorch CUDA support (GPU acceleration)
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
           pip install easyocr
 
@@ -83,7 +80,7 @@ jobs:
             Download `FSAE_Scraper_v${{ steps.version.outputs.version }}.exe` below and run it - no installation required!
             
             ### 🎮 GPU Acceleration
-            This build supports NVIDIA GPU acceleration (CUDA 11.8):
+            This build uses **EasyOCR with CUDA 11.8** support:
             - **With NVIDIA GPU + CUDA installed:** Automatically uses GPU for faster OCR
             - **Without GPU/CUDA:** Falls back to CPU (still works, just slower)
             
