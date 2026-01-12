@@ -55,6 +55,12 @@ hiddenimports = [
     'yaml',
     'PIL',
     'PIL.Image',
+    
+    # pkg_resources dependencies
+    'jaraco',
+    'jaraco.text',
+    'jaraco.functools',
+    'jaraco.context',
 ]
 
 # Collect packages that need special handling
