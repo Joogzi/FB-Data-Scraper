@@ -9,6 +9,7 @@ on:
 
 jobs:
   mirror:
+    if: github.repository == 'Joogzi/FB-Data-Scraper'
     runs-on: ubuntu-latest
     
     steps:
