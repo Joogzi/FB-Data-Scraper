@@ -5,6 +5,9 @@ on:
     branches:
       - master
       - main
+      - dev
+      - 'feature/**'
+      - 'beta/**'
   workflow_dispatch:  # Allow manual trigger
 
 permissions:
@@ -17,6 +20,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for commit count
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -39,54 +44,91 @@ jobs:
           # Count commits for build number
           $commitCount = git rev-list --count HEAD
           $shortSha = $env:GITHUB_SHA.Substring(0,7)
-          $version = "1.0.$commitCount"
+          $branch = "${{ github.ref_name }}"
+          
+          # Determine if this is a beta release
+          $isBeta = ($branch -ne "master") -and ($branch -ne "main")
+          
+          if ($isBeta) {
+            # Beta version includes branch name
+            $safeBranch = $branch -replace '[^a-zA-Z0-9]', '-'
+            $version = "1.0.$commitCount-beta.$safeBranch"
+            $tag = "v1.0.$commitCount-beta.$safeBranch"
+            $exeName = "FB_Data_Scraper_v1.0.${commitCount}_beta_${safeBranch}.exe"
+          } else {
+            # Stable version
+            $version = "1.0.$commitCount"
+            $tag = "v1.0.$commitCount"
+            $exeName = "FB_Data_Scraper_v$version.exe"
+          }
+          
           echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "tag=$tag" >> $env:GITHUB_OUTPUT
+          echo "exe_name=$exeName" >> $env:GITHUB_OUTPUT
           echo "short_sha=$shortSha" >> $env:GITHUB_OUTPUT
-          echo "Building version: $version"
+          echo "is_beta=$isBeta" >> $env:GITHUB_OUTPUT
+          echo "Building version: $version (beta: $isBeta)"
 
       - name: Build executable
         run: |
           pyinstaller fsae_extractor.spec --clean
-          # Rename exe to include version
-          $version = "${{ steps.version.outputs.version }}"
-          Move-Item "dist/FB_Data_Scraper.exe" "dist/FB_Data_Scraper_v$version.exe"
+          # Rename exe
+          $exeName = "${{ steps.version.outputs.exe_name }}"
+          Move-Item "dist/FB_Data_Scraper.exe" "dist/$exeName"
 
       - name: Get current date
         id: date
         run: |
           echo "date=$(Get-Date -Format 'yyyy-MM-dd')" >> $env:GITHUB_OUTPUT
-          echo "datetime=$(Get-Date -Format 'yyyy-MM-dd_HH-mm')" >> $env:GITHUB_OUTPUT
 
-      - name: Delete existing latest release
-        run: |
-          gh release delete latest --yes --cleanup-tag
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create Release
+      - name: Create Stable Release
+        if: steps.version.outputs.is_beta == 'False'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
+          tag_name: ${{ steps.version.outputs.tag }}
           name: "FB Data Scraper v${{ steps.version.outputs.version }}"
           body: |
             ## 🚀 FB Data Scraper v${{ steps.version.outputs.version }}
             
             **Commit:** `${{ steps.version.outputs.short_sha }}`
             **Date:** ${{ steps.date.outputs.date }}
-            **Branch:** ${{ github.ref_name }}
             
             ### 📥 Download
-            Download `FB_Data_Scraper_v${{ steps.version.outputs.version }}.exe` below and run it - no installation required!
+            Download `${{ steps.version.outputs.exe_name }}` below and run it - no installation required!
             
             ### ℹ️ Note
             This is a **CPU build** for portability. For GPU acceleration, build from source with CUDA PyTorch.
-            
-            ---
-            *This release is automatically updated on every push to master.*
           files: |
-            dist/FB_Data_Scraper_v${{ steps.version.outputs.version }}.exe
+            dist/${{ steps.version.outputs.exe_name }}
           prerelease: false
           make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Beta Release
+        if: steps.version.outputs.is_beta == 'True'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "🧪 FB Data Scraper v${{ steps.version.outputs.version }}"
+          body: |
+            ## 🧪 BETA: FB Data Scraper v${{ steps.version.outputs.version }}
+            
+            **⚠️ This is a beta/development build - may be unstable!**
+            
+            **Branch:** `${{ github.ref_name }}`
+            **Commit:** `${{ steps.version.outputs.short_sha }}`
+            **Date:** ${{ steps.date.outputs.date }}
+            
+            ### 📥 Download
+            Download `${{ steps.version.outputs.exe_name }}` below to test new features.
+            
+            ### ℹ️ Note
+            This is a **beta build** from branch `${{ github.ref_name }}`. 
+            For stable releases, check the [latest stable release](../../releases/latest).
+          files: |
+            dist/${{ steps.version.outputs.exe_name }}
+          prerelease: true
+          make_latest: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
