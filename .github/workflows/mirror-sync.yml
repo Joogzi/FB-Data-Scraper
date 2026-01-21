@@ -33,10 +33,7 @@ jobs:
           # Add mirror remote
           git remote add mirror git@github.com:FormulaBuckeyes/FB-Data-Scraper.git
           
-          # Fetch mirror's current state (if any)
-          git fetch mirror main --depth=1 || true
-          
-          # Push new commits on top of mirror's history
-          git push mirror HEAD:main
+          # Force push to keep repos in sync (overwrites org repo history)
+          git push mirror HEAD:main --force
           
           echo "✅ Successfully synced to organization repository"
