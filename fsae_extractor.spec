@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec file for FSAE Scraper.
+PyInstaller spec file for FB Data Scraper.
 
 This builds a standalone Windows executable that can be distributed
 to other users without requiring Python installation.
@@ -28,19 +28,10 @@ datas = [
 
 # Hidden imports for OCR engines
 hiddenimports = [
-    # PaddleOCR dependencies
-    'paddleocr',
-    'paddle',
-    'paddle.fluid',
+    # EasyOCR
+    'easyocr',
     'skimage',
     'skimage.transform',
-    'imgaug',
-    'lmdb',
-    'shapely',
-    'pyclipper',
-    
-    # EasyOCR fallback
-    'easyocr',
     
     # PyQt6
     'PyQt6.sip',
@@ -66,17 +57,17 @@ hiddenimports = [
 # Collect packages that need special handling
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
-# Collect PaddleOCR model files and dependencies
-try:
-    datas += collect_data_files('paddleocr')
-except Exception:
-    print("Warning: Could not collect paddleocr data files")
-
 # Collect EasyOCR model files
 try:
     datas += collect_data_files('easyocr')
 except Exception:
     print("Warning: Could not collect easyocr data files")
+
+# Collect jaraco submodules (required by pkg_resources)
+try:
+    hiddenimports += collect_submodules('jaraco')
+except Exception:
+    print("Warning: Could not collect jaraco submodules")
 
 a = Analysis(
     ['run.py'],
@@ -95,7 +86,7 @@ a = Analysis(
         'tk',
         'pytest',
         'sphinx',
-        'setuptools',
+        # Note: Do NOT exclude 'setuptools' - pkg_resources needs it and jaraco
         'pip',
     ],
     win_no_prefer_redirects=False,
@@ -113,7 +104,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='FSAE_Scraper',
+    name='FB_Data_Scraper',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

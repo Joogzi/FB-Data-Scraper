@@ -7,16 +7,10 @@ opencv-python>=4.8.0
 numpy>=1.24.0
 
 # ==============================================
-# OCR Engines (PaddleOCR is primary, EasyOCR as fallback)
+# OCR Engine
 # ==============================================
 
-# PaddleOCR - Best accuracy for varied fonts (RECOMMENDED)
-# Note: On Windows, you may need to install paddlepaddle first
-# pip install paddlepaddle -i https://pypi.tuna.tsinghua.edu.cn/simple
-paddlepaddle>=2.5.0
-paddleocr>=2.7.0
-
-# EasyOCR - Fallback option (simpler installation)
+# EasyOCR - Fast and reliable OCR
 easyocr>=1.7.0
 
 # ==============================================

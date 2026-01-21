@@ -46,7 +46,7 @@ class SplashScreen(QSplashScreen):
         title_font = QFont("Segoe UI", 28, QFont.Weight.Bold)
         painter.setFont(title_font)
         painter.setPen(QColor("#ffffff"))
-        painter.drawText(0, 60, width, 50, Qt.AlignmentFlag.AlignCenter, "FSAE Data Extractor")
+        painter.drawText(0, 60, width, 50, Qt.AlignmentFlag.AlignCenter, "FB Data Scraper")
         
         # Subtitle
         subtitle_font = QFont("Segoe UI", 12)

@@ -1,9 +1,9 @@
 @echo off
-REM FSAE Data Extractor - Windows Installation Script
+REM FB Data Scraper - Windows Installation Script
 REM This script sets up the Python environment and installs all dependencies
 
 echo ================================================
-echo   FSAE Data Extractor - Installation
+echo   FB Data Scraper - Installation
 echo ================================================
 echo.
 

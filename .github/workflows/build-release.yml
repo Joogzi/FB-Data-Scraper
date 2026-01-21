@@ -49,7 +49,7 @@ jobs:
           pyinstaller fsae_extractor.spec --clean
           # Rename exe to include version
           $version = "${{ steps.version.outputs.version }}"
-          Move-Item "dist/FSAE_Scraper.exe" "dist/FSAE_Scraper_v$version.exe"
+          Move-Item "dist/FB_Data_Scraper.exe" "dist/FB_Data_Scraper_v$version.exe"
 
       - name: Get current date
         id: date
@@ -68,16 +68,16 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: "FSAE Scraper v${{ steps.version.outputs.version }}"
+          name: "FB Data Scraper v${{ steps.version.outputs.version }}"
           body: |
-            ## 🚀 FSAE Scraper v${{ steps.version.outputs.version }}
+            ## 🚀 FB Data Scraper v${{ steps.version.outputs.version }}
             
             **Commit:** `${{ steps.version.outputs.short_sha }}`
             **Date:** ${{ steps.date.outputs.date }}
             **Branch:** ${{ github.ref_name }}
             
             ### 📥 Download
-            Download `FSAE_Scraper_v${{ steps.version.outputs.version }}.exe` below and run it - no installation required!
+            Download `FB_Data_Scraper_v${{ steps.version.outputs.version }}.exe` below and run it - no installation required!
             
             ### ℹ️ Note
             This is a **CPU build** for portability. For GPU acceleration, build from source with CUDA PyTorch.
@@ -85,7 +85,7 @@ jobs:
             ---
             *This release is automatically updated on every push to master.*
           files: |
-            dist/FSAE_Scraper_v${{ steps.version.outputs.version }}.exe
+            dist/FB_Data_Scraper_v${{ steps.version.outputs.version }}.exe
           prerelease: false
           make_latest: true
         env:

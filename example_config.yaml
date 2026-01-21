@@ -1,4 +1,4 @@
-# Example configuration for FSAE Data Extractor
+# Example configuration for FB Data Scraper
 # Copy this to config.json and customize for your video
 
 video_path: ""

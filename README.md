@@ -1,4 +1,4 @@
-# FSAE Scraper
+# FB Data Scraper
 
 A professional desktop application for extracting telemetry data from racing/motorsport onboard videos using advanced OCR and computer vision.
 
@@ -8,12 +8,12 @@ A professional desktop application for extracting telemetry data from racing/mot
 
 ## ✨ Features
 
-- **🚀 Advanced OCR Engine** - Uses PaddleOCR (with EasyOCR fallback) for maximum accuracy across different fonts and overlays
-- **📊 Multiple Metrics** - Extract speed, G-force, per-wheel torque, and more
+- **🚀 Advanced OCR Engine** - Uses EasyOCR for best accuracy, will test other engines in the future
+- **📊 Multiple Metrics** - Extract speed, G-force, per-wheel torque(beta), and more
 - **🎯 Interactive ROI Selection** - Draw regions of interest directly on the video
 - **⚡ Real-time Preview** - See extracted values overlaid on video playback
-- **🎨 Modern UI** - Polished dark theme with professional styling
-- **📦 Standalone Executable** - Distribute to others without requiring Python
+- **🎨 Modern UI** - Polished dark theme with a nice styling
+- **📦 Standalone Executable** - Distributable to others without requiring Python
 
 ## 🖼️ Screenshots
 
@@ -24,19 +24,18 @@ A professional desktop application for extracting telemetry data from racing/mot
 ### Option 1: Download Executable (Easiest)
 
 1. Download the latest release from the [Releases](../../releases/latest) page
-2. Run `FSAE_Scraper_vX.X.X.exe` (version number will be in the filename)
+2. Run `FB_Data_Scraper_vX.X.X.exe` (version number will be in the filename)
 3. No Python installation required!
 
 > 💡 **Note:** The executable is automatically built and released on every commit to master.
 
-#### 🎮 GPU Acceleration (Optional)
+#### 🎮 GPU Acceleration is still in testing
 
-The executable supports **NVIDIA GPU acceleration** for faster OCR processing:
 
 | Setup | Performance |
 |-------|-------------|
-| **With NVIDIA GPU + CUDA** | ⚡ Fast - Uses GPU automatically |
-| **Without GPU** | ✅ Works fine - Falls back to CPU |
+| **With NVIDIA GPU + CUDA** | Fast - Uses GPU  |
+| **Without GPU** |  Works fine - Falls back to CPU |
 
 **To enable GPU acceleration:**
 1. Have an NVIDIA GPU (GTX 10 series or newer recommended)
@@ -45,12 +44,12 @@ The executable supports **NVIDIA GPU acceleration** for faster OCR processing:
 
 > The exe works without CUDA - it's just slower. No extra setup needed for CPU-only usage.
 
-### Option 2: Install from Source
+### Option 2: Install from Source - GPU works here if installed correctly
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/fsae_data_extractor.git
-cd fsae_data_extractor
+git clone https://github.com/yourusername/fb_data_scraper.git
+cd fb_data_scraper
 
 # Create virtual environment
 python -m venv venv
@@ -66,19 +65,12 @@ pip install -r requirements.txt
 For GPU acceleration when running from source:
 
 ```bash
-# Instead of paddlepaddle, install the GPU version:
-pip install paddlepaddle-gpu -f https://www.paddlepaddle.org.cn/whl/windows/mkl/avx/stable.html
 
 # For EasyOCR GPU support:
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 ```
 
-#### Note for PaddleOCR on Windows:
-If you encounter issues installing PaddleOCR, try:
-```bash
-pip install paddlepaddle -i https://pypi.tuna.tsinghua.edu.cn/simple
-pip install paddleocr
-```
+
 
 ## 🚀 Usage
 
@@ -128,7 +120,7 @@ The executable will be in the `dist/` folder.
 ## 📁 Project Structure
 
 ```
-fsae_data_extractor/
+fb_data_scraper/
 ├── run.py                  # Application entry point
 ├── build.py                # Build script for executable
 ├── requirements.txt        # Python dependencies
@@ -170,14 +162,10 @@ The app includes optimized presets for different video types:
 
 ### OCR Engine Selection
 
-- **PaddleOCR** (default) - Best accuracy, especially for varied fonts
+ 
 - **EasyOCR** - Simpler installation, used as fallback
+- **PaddleOCR** - legacy versions may still have Paddle installed, but it isn't currently used due to innaccurate readings
 
-The app automatically selects PaddleOCR if available, falling back to EasyOCR.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 📄 License
 

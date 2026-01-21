@@ -1,4 +1,4 @@
-"""Entry point for FSAE Data Extractor application."""
+"""Entry point for FB Data Scraper application."""
 
 from src.gui.main_window import main
 

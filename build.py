@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Build script for FSAE Data Extractor.
+Build script for FB Data Scraper.
 
 Creates a standalone executable using PyInstaller.
 
@@ -89,13 +89,13 @@ VSVersionInfo(
       [
       StringTable(
         u'040904B0',
-        [StringStruct(u'CompanyName', u'FSAE'),
-        StringStruct(u'FileDescription', u'FSAE Scraper - Video Telemetry Analysis'),
+        [StringStruct(u'CompanyName', u'FB'),
+        StringStruct(u'FileDescription', u'FB Data Scraper - Video Telemetry Analysis'),
         StringStruct(u'FileVersion', u'1.0.0'),
-        StringStruct(u'InternalName', u'fsae_scraper'),
+        StringStruct(u'InternalName', u'fb_data_scraper'),
         StringStruct(u'LegalCopyright', u'Copyright 2026'),
-        StringStruct(u'OriginalFilename', u'FSAE_Scraper.exe'),
-        StringStruct(u'ProductName', u'FSAE Scraper'),
+        StringStruct(u'OriginalFilename', u'FB_Data_Scraper.exe'),
+        StringStruct(u'ProductName', u'FB Data Scraper'),
         StringStruct(u'ProductVersion', u'1.0.0')])
       ]),
     VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
@@ -124,7 +124,7 @@ def build_executable(onedir=False):
             '--noconfirm',
             '--onedir',
             '--windowed',
-            '--name', 'FSAE_Data_Extractor',
+            '--name', 'FB_Data_Scraper',
             '--add-data', 'src;src',
             'run.py'
         ]
@@ -148,9 +148,9 @@ def build_executable(onedir=False):
     
     # Show output location
     if onedir:
-        output_path = Path('dist/FSAE_Data_Extractor')
+        output_path = Path('dist/FB_Data_Scraper')
     else:
-        output_path = Path('dist/FSAE_Data_Extractor.exe')
+        output_path = Path('dist/FB_Data_Scraper.exe')
     
     if output_path.exists():
         if output_path.is_file():
@@ -164,7 +164,7 @@ def build_executable(onedir=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Build FSAE Data Extractor executable')
+    parser = argparse.ArgumentParser(description='Build FB Data Scraper executable')
     parser.add_argument('--clean', action='store_true', help='Clean build artifacts first')
     parser.add_argument('--onedir', action='store_true', help='Build as directory instead of single file')
     parser.add_argument('--skip-deps', action='store_true', help='Skip dependency check')
@@ -172,7 +172,7 @@ def main():
     args = parser.parse_args()
     
     print("=" * 50)
-    print("  FSAE Data Extractor - Build Script")
+    print("  FB Data Scraper - Build Script")
     print("=" * 50 + "\n")
     
     # Change to script directory

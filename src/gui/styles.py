@@ -1,7 +1,7 @@
 """
 Application styling and theme constants.
 
-Provides a modern, polished dark theme for the FSAE Data Extractor.
+Provides a modern, polished dark theme for the FB Data Scraper.
 """
 
 # Color palette

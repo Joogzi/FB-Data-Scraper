@@ -1,4 +1,4 @@
-"""Main application window for FSAE Data Extractor."""
+"""Main application window for FB Data Scraper."""
 
 import sys
 import os
@@ -31,12 +31,11 @@ from src.gui.widgets.transport import TransportControls
 
 class OCRInitWorker(QObject):
     """Worker for initializing OCR in a background thread."""
-    finished = pyqtSignal(str, bool, str)  # backend_name, cuda_available, error_msg
+    finished = pyqtSignal(bool, str)  # cuda_available, error_msg
     status = pyqtSignal(str)  # Status updates
     
-    def __init__(self, backend: str, speed_extractor, gforce_extractor, kw_extractor):
+    def __init__(self, speed_extractor, gforce_extractor, kw_extractor):
         super().__init__()
-        self.backend = backend
         self.speed_extractor = speed_extractor
         self.gforce_extractor = gforce_extractor
         self.kw_extractor = kw_extractor
@@ -46,16 +45,8 @@ class OCRInitWorker(QObject):
         from src.core.ocr_engine import OCRBackend, cleanup_shared_engine
         
         try:
-            self.status.emit(f"Cleaning up previous OCR engine...")
+            self.status.emit("Cleaning up previous OCR engine...")
             cleanup_shared_engine()
-            
-            # Map backend string to enum
-            backend_map = {
-                "paddle": OCRBackend.PADDLE,
-                "easyocr": OCRBackend.EASYOCR,
-                "auto": OCRBackend.AUTO
-            }
-            ocr_backend = backend_map.get(self.backend, OCRBackend.AUTO)
             
             # Check for CUDA availability
             cuda_available = False
@@ -65,38 +56,155 @@ class OCRInitWorker(QObject):
             except ImportError:
                 pass
             
-            self.status.emit(f"Setting up extractors for {self.backend}...")
+            self.status.emit("Setting up EasyOCR extractors...")
             
             # Clear and set backend for extractors
             self.speed_extractor._ocr_engine = None
             self.gforce_extractor._ocr_engine = None
             self.kw_extractor._ocr_engine = None
             
-            self.speed_extractor.ocr_backend = ocr_backend
-            self.gforce_extractor.ocr_backend = ocr_backend
-            self.kw_extractor.ocr_backend = ocr_backend
+            self.speed_extractor.ocr_backend = OCRBackend.EASYOCR
+            self.gforce_extractor.ocr_backend = OCRBackend.EASYOCR
+            self.kw_extractor.ocr_backend = OCRBackend.EASYOCR
             
             self.speed_extractor.use_gpu = cuda_available
             self.gforce_extractor.use_gpu = cuda_available
             self.kw_extractor.use_gpu = cuda_available
             
-            self.status.emit(f"Initializing {self.backend} OCR (may download models)...")
+            self.status.emit("Initializing EasyOCR (downloading models if needed)...")
             
             self.speed_extractor.initialize()
             self.gforce_extractor.initialize()
             self.kw_extractor.initialize()
             
-            # Get backend name from initialized engine
-            backend_name = "Unknown"
-            if hasattr(self.speed_extractor, '_ocr_engine') and self.speed_extractor._ocr_engine:
-                backend_name = self.speed_extractor._ocr_engine.active_backend or "Unknown"
-            elif hasattr(self.kw_extractor, '_ocr_engine') and self.kw_extractor._ocr_engine:
-                backend_name = self.kw_extractor._ocr_engine.active_backend or "Unknown"
-            
-            self.finished.emit(backend_name, cuda_available, "")
+            self.finished.emit(cuda_available, "")
             
         except Exception as e:
-            self.finished.emit("", False, str(e))
+            self.finished.emit(False, str(e))
+
+
+class ExportWorker(QObject):
+    """Worker for batch extracting data from video frames."""
+    progress = pyqtSignal(int, int)  # current_frame, total_frames
+    finished = pyqtSignal(bool, str)  # success, message
+    
+    def __init__(self, video_reader, extractors: dict, output_path: str, metric_panel):
+        super().__init__()
+        self.video_reader = video_reader
+        self.extractors = extractors
+        self.output_path = output_path
+        self.metric_panel = metric_panel
+        self._cancelled = False
+    
+    def cancel(self):
+        self._cancelled = True
+    
+    def run(self):
+        """Extract data from all frames and save to CSV."""
+        import csv
+        
+        try:
+            total_frames = self.video_reader.frame_count
+            fps = self.video_reader.fps
+            
+            # Determine which metrics have valid ROIs and are enabled
+            active_metrics = []
+            headers = ["Frame", "Time (s)"]
+            
+            # Check each extractor
+            if self.extractors.get('speed') and self.extractors['speed'].roi:
+                if self.metric_panel.speed_card.is_enabled:
+                    active_metrics.append(('speed', self.extractors['speed']))
+                    headers.append("Speed (km/h)")
+            
+            if self.extractors.get('gforce') and self.extractors['gforce'].roi:
+                if self.metric_panel.gforce_card.is_enabled:
+                    active_metrics.append(('gforce', self.extractors['gforce']))
+                    headers.append("G-Force")
+            
+            if self.extractors.get('kw') and self.extractors['kw'].roi:
+                if hasattr(self.metric_panel, 'kw_card') and self.metric_panel.kw_card.is_enabled:
+                    active_metrics.append(('kw', self.extractors['kw']))
+                    headers.append("Power (kW)")
+            
+            if self.extractors.get('throttle') and self.extractors['throttle'].roi:
+                if hasattr(self.metric_panel, 'throttle_card') and self.metric_panel.throttle_card.is_enabled:
+                    active_metrics.append(('throttle', self.extractors['throttle']))
+                    headers.append("Throttle (%)")
+            
+            if self.extractors.get('brake') and self.extractors['brake'].roi:
+                if hasattr(self.metric_panel, 'brake_card') and self.metric_panel.brake_card.is_enabled:
+                    active_metrics.append(('brake', self.extractors['brake']))
+                    headers.append("Brake (%)")
+            
+            # Torque metrics
+            if self.extractors.get('torque'):
+                for wheel in ['fl', 'fr', 'rl', 'rr']:
+                    roi = self.extractors['torque'].get_roi(wheel)
+                    card = self.metric_panel.torque_cards.get(wheel)
+                    if roi and card and card.is_enabled:
+                        active_metrics.append((f'torque_{wheel}', (self.extractors['torque'], wheel)))
+                        wheel_name = {'fl': 'FL', 'fr': 'FR', 'rl': 'RL', 'rr': 'RR'}[wheel]
+                        headers.append(f"Torque {wheel_name}")
+            
+            if not active_metrics:
+                self.finished.emit(False, "No metrics with valid ROIs selected. Please draw ROI boxes for the metrics you want to extract.")
+                return
+            
+            # Open CSV file
+            with open(self.output_path, 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(headers)
+                
+                # Process each frame
+                for frame_idx in range(total_frames):
+                    if self._cancelled:
+                        self.finished.emit(False, "Export cancelled")
+                        return
+                    
+                    self.progress.emit(frame_idx + 1, total_frames)
+                    
+                    ret, frame = self.video_reader.read_frame(frame_idx)
+                    if not ret or frame is None:
+                        continue
+                    
+                    # Calculate time
+                    time_sec = frame_idx / fps if fps > 0 else 0
+                    row = [frame_idx, f"{time_sec:.3f}"]
+                    
+                    # Extract each active metric
+                    for metric_name, extractor in active_metrics:
+                        value = ""
+                        try:
+                            if metric_name.startswith('torque_'):
+                                torque_ext, wheel = extractor
+                                result = torque_ext.extractors[wheel].extract_from_roi(frame)
+                                if result.is_valid:
+                                    value = f"{result.value.value:.2f}"
+                            elif metric_name in ('throttle', 'brake'):
+                                result = extractor.extract_from_roi(frame)
+                                if result.is_valid:
+                                    value = f"{result.value * 100:.1f}"
+                            else:
+                                result = extractor.extract_from_roi(frame)
+                                if result.is_valid:
+                                    if metric_name == 'gforce':
+                                        value = f"{result.value:.2f}"
+                                    elif metric_name == 'kw':
+                                        value = f"{result.value:.1f}"
+                                    else:
+                                        value = str(result.value)
+                        except Exception as e:
+                            print(f"Error extracting {metric_name} at frame {frame_idx}: {e}")
+                        
+                        row.append(value)
+                    
+                    writer.writerow(row)
+            
+            self.finished.emit(True, f"Successfully exported {total_frames} frames to {self.output_path}")
+            
+        except Exception as e:
+            self.finished.emit(False, f"Export failed: {str(e)}")
 
 
 class MainWindow(QMainWindow):
@@ -105,7 +213,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        self.setWindowTitle("FSAE Data Extractor")
+        self.setWindowTitle("FB Data Scraper")
         self.setMinimumSize(1200, 800)
         
         # Core components
@@ -227,9 +335,9 @@ class MainWindow(QMainWindow):
         # Tools menu
         tools_menu = menubar.addMenu("&Tools")
         
-        # OCR submenu - only EasyOCR (PaddleOCR 3.x causes freezing)
-        init_ocr_action = QAction("Re-initialize &OCR (EasyOCR)", self)
-        init_ocr_action.triggered.connect(lambda: self._initialize_ocr_backend("easyocr"))
+        # OCR re-initialization option
+        init_ocr_action = QAction("Re-initialize &OCR", self)
+        init_ocr_action.triggered.connect(self._initialize_ocr)
         tools_menu.addAction(init_ocr_action)
         
         # Help menu
@@ -576,13 +684,9 @@ class MainWindow(QMainWindow):
     # --- OCR initialization ---
     
     def _initialize_ocr(self):
-        """Initialize OCR engines with auto backend selection."""
-        self._initialize_ocr_backend("auto")
-    
-    def _initialize_ocr_backend(self, backend: str):
-        """Initialize OCR engines with specified backend in a background thread."""
+        """Initialize EasyOCR engine in a background thread."""
         # Show loading state
-        self.status_label.setText(f"Initializing OCR ({backend})...")
+        self.status_label.setText("Initializing EasyOCR...")
         self.ocr_label.setText("OCR: Initializing...")
         self.progress_bar.show()
         self.progress_bar.setRange(0, 0)  # Indeterminate
@@ -590,7 +694,6 @@ class MainWindow(QMainWindow):
         # Create worker and thread
         self._ocr_thread = QThread()
         self._ocr_worker = OCRInitWorker(
-            backend,
             self.speed_extractor,
             self.gforce_extractor,
             self.kw_extractor
@@ -612,7 +715,7 @@ class MainWindow(QMainWindow):
         """Update status label during OCR initialization."""
         self.status_label.setText(status)
     
-    def _on_ocr_finished(self, backend_name: str, cuda_available: bool, error_msg: str):
+    def _on_ocr_finished(self, cuda_available: bool, error_msg: str):
         """Handle OCR initialization completion."""
         self.progress_bar.hide()
         
@@ -623,29 +726,11 @@ class MainWindow(QMainWindow):
             self.ocr_label.setStyleSheet("color: #F44336; padding-right: 10px;")
             return
         
-        # Get GPU info for message
-        cuda_info = ""
-        if cuda_available:
-            try:
-                import torch
-                gpu_name = torch.cuda.get_device_name(0)
-                cuda_info = f" [GPU: {gpu_name}]"
-            except:
-                cuda_info = " [GPU]"
-        
+        # Get GPU info for display
         gpu_status = " (CUDA)" if cuda_available else " (CPU)"
-        self.ocr_label.setText(f"OCR: {backend_name.upper()}{gpu_status}")
+        self.ocr_label.setText(f"OCR: EASYOCR{gpu_status}")
         self.ocr_label.setStyleSheet("color: #4CAF50; padding-right: 10px; font-weight: bold;")
-        self.status_label.setText(f"OCR initialized{cuda_info}")
-        
-        if cuda_available and backend_name.lower() != "unknown":
-            QMessageBox.information(self, "OCR Ready", 
-                f"OCR initialized with {backend_name.upper()}\n"
-                f"GPU: {cuda_info.strip(' []')}\n\n"
-                "OCR processing will use GPU acceleration.")
-        elif backend_name.lower() != "unknown":
-            QMessageBox.information(self, "OCR Ready", 
-                f"OCR initialized with {backend_name.upper()} (CPU mode)")
+        self.status_label.setText("OCR ready")
     
     # --- Export ---
     
@@ -653,6 +738,31 @@ class MainWindow(QMainWindow):
         """Export extracted data to CSV."""
         if self.video_reader is None:
             QMessageBox.warning(self, "No Video", "Please open a video first.")
+            return
+        
+        # Check if any metrics are selected
+        has_metrics = False
+        if self.speed_extractor.roi and self.metric_panel.speed_card.is_enabled:
+            has_metrics = True
+        if self.gforce_extractor.roi and self.metric_panel.gforce_card.is_enabled:
+            has_metrics = True
+        if self.kw_extractor.roi and hasattr(self.metric_panel, 'kw_card') and self.metric_panel.kw_card.is_enabled:
+            has_metrics = True
+        if self.throttle_extractor.roi and hasattr(self.metric_panel, 'throttle_card') and self.metric_panel.throttle_card.is_enabled:
+            has_metrics = True
+        if self.brake_extractor.roi and hasattr(self.metric_panel, 'brake_card') and self.metric_panel.brake_card.is_enabled:
+            has_metrics = True
+        for wheel in ['fl', 'fr', 'rl', 'rr']:
+            roi = self.torque_extractor.get_roi(wheel)
+            card = self.metric_panel.torque_cards.get(wheel)
+            if roi and card and card.is_enabled:
+                has_metrics = True
+                break
+        
+        if not has_metrics:
+            QMessageBox.warning(self, "No Metrics", 
+                "No metrics selected for export.\n\n"
+                "Please draw ROI boxes for the metrics you want to extract.")
             return
         
         path, _ = QFileDialog.getSaveFileName(
@@ -664,10 +774,74 @@ class MainWindow(QMainWindow):
         if not path:
             return
         
-        # TODO: Implement batch extraction and export
-        QMessageBox.information(self, "Export", 
-            "Batch export will process all frames and save to CSV.\n"
-            "This feature is coming soon!")
+        # Set up progress bar with red styling
+        self.progress_bar.setRange(0, self.video_reader.frame_count)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #333;
+                border-radius: 3px;
+                text-align: center;
+                background-color: #1a1a1a;
+            }
+            QProgressBar::chunk {
+                background-color: #e53935;
+            }
+        """)
+        self.progress_bar.show()
+        self.status_label.setText("Exporting data...")
+        
+        # Disable UI during export
+        self._pause()
+        
+        # Create extractors dict
+        extractors = {
+            'speed': self.speed_extractor,
+            'gforce': self.gforce_extractor,
+            'kw': self.kw_extractor,
+            'throttle': self.throttle_extractor,
+            'brake': self.brake_extractor,
+            'torque': self.torque_extractor,
+        }
+        
+        # Create worker and thread
+        self._export_thread = QThread()
+        self._export_worker = ExportWorker(
+            self.video_reader,
+            extractors,
+            path,
+            self.metric_panel
+        )
+        self._export_worker.moveToThread(self._export_thread)
+        
+        # Connect signals
+        self._export_thread.started.connect(self._export_worker.run)
+        self._export_worker.progress.connect(self._on_export_progress)
+        self._export_worker.finished.connect(self._on_export_finished)
+        self._export_worker.finished.connect(self._export_thread.quit)
+        self._export_worker.finished.connect(self._export_worker.deleteLater)
+        self._export_thread.finished.connect(self._export_thread.deleteLater)
+        
+        # Start export
+        self._export_thread.start()
+    
+    def _on_export_progress(self, current: int, total: int):
+        """Update progress bar during export."""
+        self.progress_bar.setValue(current)
+        self.status_label.setText(f"Exporting frame {current}/{total}...")
+    
+    def _on_export_finished(self, success: bool, message: str):
+        """Handle export completion."""
+        self.progress_bar.hide()
+        # Reset progress bar style
+        self.progress_bar.setStyleSheet("")
+        
+        if success:
+            self.status_label.setText("Export complete")
+            QMessageBox.information(self, "Export Complete", message)
+        else:
+            self.status_label.setText("Export failed")
+            QMessageBox.warning(self, "Export Failed", message)
     
     # --- About ---
     
@@ -675,8 +849,8 @@ class MainWindow(QMainWindow):
         """Show about dialog."""
         QMessageBox.about(
             self,
-            "About FSAE Data Extractor",
-            "FSAE Onboard Video Data Extractor\n\n"
+            "About FB Data Scraper",
+            "FB Onboard Video Data Scraper\n\n"
             "Version 0.1.0\n\n"
             "Extract telemetry data from Formula SAE onboard videos "
             "using OCR and computer vision.\n\n"
@@ -704,9 +878,9 @@ def main():
     app = QApplication(sys.argv)
     
     # Set application info
-    app.setApplicationName("FSAE Data Extractor")
+    app.setApplicationName("FB Data Scraper")
     app.setApplicationVersion("1.0.0")
-    app.setOrganizationName("FSAE")
+    app.setOrganizationName("FB")
     
     # Import and show splash screen
     from src.gui.splash import show_splash
@@ -734,6 +908,9 @@ def main():
     # Show window and close splash
     window.show()
     splash.finish(window)
+    
+    # Auto-initialize EasyOCR after window is shown
+    QTimer.singleShot(100, window._initialize_ocr)
     
     sys.exit(app.exec())
 

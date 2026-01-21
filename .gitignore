@@ -26,7 +26,7 @@ output/
 *.csv
 !*example*.csv
 
-# Video files (too large for git)
+# Video files
 *.mp4
 *.avi
 *.mkv

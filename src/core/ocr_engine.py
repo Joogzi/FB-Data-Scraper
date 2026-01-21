@@ -1,14 +1,7 @@
 """
-OCR Engine module with multiple backend support.
+OCR Engine module using EasyOCR backend.
 
-Supports:
-- PaddleOCR (recommended - best accuracy for varied fonts)
-- EasyOCR (fallback)
-
-PaddleOCR provides significantly better accuracy on:
-- Different font styles and weights
-- Numeric text (critical for telemetry)
-- Various video overlay styles
+Provides reliable OCR for extracting telemetry data from video overlays.
 """
 
 import re
@@ -22,9 +15,8 @@ import numpy as np
 
 class OCRBackend(Enum):
     """Available OCR backends."""
-    PADDLE = "paddle"
     EASYOCR = "easyocr"
-    AUTO = "auto"  # Try PaddleOCR first, fallback to EasyOCR
+    AUTO = "auto"  # Uses EasyOCR
 
 
 @dataclass
@@ -63,150 +55,6 @@ class BaseOCREngine(ABC):
     @property
     def is_initialized(self) -> bool:
         return self._initialized
-
-
-class PaddleOCREngine(BaseOCREngine):
-    """PaddleOCR-based engine - best accuracy for varied fonts."""
-    
-    def __init__(self, use_gpu: bool = True, use_angle_cls: bool = False):
-        super().__init__(use_gpu)
-        self.use_angle_cls = use_angle_cls
-        self._reader = None
-    
-    def initialize(self) -> bool:
-        """Initialize PaddleOCR."""
-        try:
-            from paddleocr import PaddleOCR
-            
-            # PaddleOCR 3.x has a completely new API
-            # Try the new API first, then fall back to older versions
-            try:
-                # New PaddleOCR 3.x API - disable document processing to speed up init
-                self._reader = PaddleOCR(
-                    lang='en',
-                    use_doc_orientation_classify=False,  # Skip document orientation
-                    use_doc_unwarping=False,  # Skip document unwarping
-                    use_textline_orientation=False,  # Skip textline orientation
-                )
-                self._initialized = True
-                print("PaddleOCR 3.x initialized successfully")
-                return True
-            except TypeError as e:
-                print(f"PaddleOCR 3.x init failed: {e}, trying older API...")
-            
-            # Try PaddleOCR 2.x API
-            try:
-                self._reader = PaddleOCR(
-                    use_angle_cls=self.use_angle_cls,
-                    lang='en',
-                    use_gpu=self.use_gpu,
-                    show_log=False,
-                    det_db_thresh=0.1,
-                    det_db_box_thresh=0.3,
-                    det_db_unclip_ratio=1.8,
-                )
-                self._initialized = True
-                print("PaddleOCR 2.x initialized successfully")
-                return True
-            except TypeError as e:
-                print(f"PaddleOCR 2.x init failed: {e}")
-                return False
-            
-        except Exception as e:
-            print(f"Failed to initialize PaddleOCR: {e}")
-            return False
-    
-    def read_text(self, image: np.ndarray) -> List[OCRResult]:
-        """Read text using PaddleOCR."""
-        if not self._initialized or self._reader is None:
-            return []
-        
-        try:
-            # PaddleOCR works better with larger images - upscale if too small
-            h, w = image.shape[:2]
-            scale = 1.0
-            if h < 50 or w < 50:
-                scale = max(50 / h, 50 / w, 2.0)
-                image = cv2.resize(image, None, fx=scale, fy=scale, 
-                                   interpolation=cv2.INTER_CUBIC)
-            
-            # Ensure image is RGB (PaddleOCR expects RGB)
-            if len(image.shape) == 2:
-                # Grayscale - convert to RGB
-                image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-            elif image.shape[2] == 3:
-                # BGR to RGB
-                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            
-            # PaddleOCR 3.x uses predict() method, 2.x uses ocr() method
-            if hasattr(self._reader, 'predict'):
-                # PaddleOCR 3.x API
-                result = self._reader.predict(image)
-                ocr_results = []
-                
-                # New API returns a LIST of dicts, each with 'rec_texts' and 'rec_scores'
-                # e.g. [{'rec_texts': ['123'], 'rec_scores': [0.99], 'dt_polys': [...]}]
-                if result and isinstance(result, list):
-                    for page_result in result:
-                        if not isinstance(page_result, dict):
-                            continue
-                        texts = page_result.get('rec_texts', [])
-                        scores = page_result.get('rec_scores', [])
-                        boxes = page_result.get('dt_polys', []) or page_result.get('rec_polys', [])
-                        
-                        for i, text in enumerate(texts):
-                            if text:
-                                confidence = scores[i] if i < len(scores) else 0.5
-                                bbox = None
-                                if boxes and i < len(boxes) and boxes[i] is not None:
-                                    pts = boxes[i]
-                                    try:
-                                        xs = [p[0] / scale for p in pts]
-                                        ys = [p[1] / scale for p in pts]
-                                        bbox = (int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys)))
-                                    except (TypeError, IndexError):
-                                        pass
-                                
-                                ocr_results.append(OCRResult(
-                                    text=str(text),
-                                    confidence=float(confidence),
-                                    bbox=bbox
-                                ))
-                return ocr_results
-            else:
-                # PaddleOCR 2.x API
-                results = self._reader.ocr(image, cls=self.use_angle_cls)
-            
-                ocr_results = []
-                if results and results[0]:
-                    for line in results[0]:
-                        if line and len(line) >= 2:
-                            bbox_points = line[0]
-                            text_info = line[1]
-                            
-                            if text_info and len(text_info) >= 2:
-                                text = str(text_info[0])
-                                confidence = float(text_info[1])
-                                
-                                xs = [p[0] / scale for p in bbox_points]
-                                ys = [p[1] / scale for p in bbox_points]
-                                bbox = (int(min(xs)), int(min(ys)), 
-                                       int(max(xs)), int(max(ys)))
-                                
-                                ocr_results.append(OCRResult(
-                                    text=text,
-                                    confidence=confidence,
-                                    bbox=bbox
-                                ))
-                
-                return ocr_results
-        except Exception as e:
-            print(f"PaddleOCR error: {e}")
-            return []
-    
-    def cleanup(self) -> None:
-        self._reader = None
-        super().cleanup()
 
 
 class EasyOCREngine(BaseOCREngine):
@@ -266,10 +114,10 @@ class EasyOCREngine(BaseOCREngine):
 
 class OCREngine:
     """
-    Unified OCR engine with automatic backend selection.
+    Unified OCR engine using EasyOCR backend.
     
     Usage:
-        engine = OCREngine(backend=OCRBackend.AUTO)
+        engine = OCREngine()
         engine.initialize()
         results = engine.read_text(image)
         text = engine.read_text_simple(image)  # Just get the text
@@ -282,34 +130,16 @@ class OCREngine:
         self._active_backend: Optional[OCRBackend] = None
     
     def initialize(self) -> bool:
-        """Initialize OCR engine with automatic fallback."""
-        backends_to_try = []
+        """Initialize OCR engine with EasyOCR."""
+        engine = EasyOCREngine(use_gpu=self.use_gpu)
+        if engine.initialize():
+            self._engine = engine
+            self._active_backend = OCRBackend.EASYOCR
+            print(f"OCR initialized with EasyOCR")
+            return True
         
-        if self.backend_type == OCRBackend.AUTO:
-            # EasyOCR first - it's MUCH faster for real-time video processing
-            # PaddleOCR 3.x is too slow (10+ seconds per frame)
-            backends_to_try = [OCRBackend.EASYOCR, OCRBackend.PADDLE]
-        else:
-            backends_to_try = [self.backend_type]
-        
-        for backend in backends_to_try:
-            engine = self._create_engine(backend)
-            if engine and engine.initialize():
-                self._engine = engine
-                self._active_backend = backend
-                print(f"OCR initialized with {backend.value}")
-                return True
-        
-        print("Failed to initialize any OCR backend")
+        print("Failed to initialize EasyOCR")
         return False
-    
-    def _create_engine(self, backend: OCRBackend) -> Optional[BaseOCREngine]:
-        """Create engine instance for specified backend."""
-        if backend == OCRBackend.PADDLE:
-            return PaddleOCREngine(use_gpu=self.use_gpu)
-        elif backend == OCRBackend.EASYOCR:
-            return EasyOCREngine(use_gpu=self.use_gpu)
-        return None
     
     def read_text(self, image: np.ndarray) -> List[OCRResult]:
         """Read all text from image."""
