@@ -12,8 +12,14 @@ on:
       - '**.md'
       - 'LICENSE'
       - '.gitignore'
+      - '.github/**'
       - 'docs/**'
       - '*.txt'
+      - '*.csv'
+      - '*.bat'
+      - 'assets/**'
+      - 'build/**'
+      - 'dist/**'
       - 'example_config.yaml'
   workflow_dispatch:  # Allow manual trigger
 
