@@ -1,0 +1,42 @@
+name: Mirror to Organization
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for proper sync
+
+      - name: Mirror to organization repo
+        env:
+          MIRROR_DEPLOY_KEY: ${{ secrets.MIRROR_DEPLOY_KEY }}
+        run: |
+          # Set up SSH
+          mkdir -p ~/.ssh
+          echo "$MIRROR_DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          
+          # Configure git to use the deploy key
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no"
+          
+          # Add mirror remote
+          git remote add mirror git@github.com:FormulaBuckeyes/FB-Data-Scraper.git
+          
+          # Fetch mirror's current state (if any)
+          git fetch mirror main --depth=1 || true
+          
+          # Push new commits on top of mirror's history
+          git push mirror HEAD:main
+          
+          echo "✅ Successfully synced to organization repository"
