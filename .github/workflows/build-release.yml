@@ -8,6 +8,13 @@ on:
       - dev
       - 'feature/**'
       - 'beta/**'
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - 'docs/**'
+      - '*.txt'
+      - 'example_config.yaml'
   workflow_dispatch:  # Allow manual trigger
 
 permissions:

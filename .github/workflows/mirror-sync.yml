@@ -30,6 +30,12 @@ jobs:
           # Configure git to use the deploy key
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no"
           
+          # Modify README to add mirror notice (only for org repo)
+          sed -i 's/^# FB Data Scraper$/# FB Data Scraper\n### 🔗 Mirror of [Joogzi\/FB-Data-Scraper](https:\/\/github.com\/Joogzi\/FB-Data-Scraper)/' README.md
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git commit -am "Add mirror notice to README" --allow-empty || true
+          
           # Add mirror remote
           git remote add mirror git@github.com:FormulaBuckeyes/FB-Data-Scraper.git
           
